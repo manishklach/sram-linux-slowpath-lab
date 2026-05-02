@@ -5,6 +5,13 @@ BEGIN {
     printf("%-18s %-6s %-16s %s\n", "TIME_NS", "PID", "COMM", "EVENT");
 }
 
+tracepoint:ftrace:print {
+    $msg = str(args->buf);
+    if (strncmp($msg, "REQ_START", 9) == 0 || strncmp($msg, "REQ_END", 7) == 0) {
+        printf("%-18u %-6d %-16s marker: %s\n", nsecs, pid, comm, $msg);
+    }
+}
+
 tracepoint:syscalls:sys_enter_io_uring_enter {
     printf("%-18u %-6d %-16s sys_enter_io_uring_enter\n", nsecs, pid, comm);
 }

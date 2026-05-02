@@ -47,6 +47,13 @@ This repository is designed in two phases:
 
 The tools for Native Linux are available in the `trace/` directory.
 
+## New Capability: Kernel-Path Attribution
+
+We can now measure the exact journey of a request through the kernel:
+`REQ_START` → `Submit` → `Device` → `IRQ` → `Softirq` → `Wakeup` → `Schedule` → `REQ_END`
+
+This allows us to answer: **"Where exactly does the latency come from inside the Linux kernel?"** and isolate scheduler noise from hardware performance.
+
 ## Key Insight
 
 - **Median latency ≈ device + small overhead**: At p50, the hardware and software overheads are comparable.

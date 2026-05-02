@@ -4,6 +4,16 @@
 #include <unistd.h>
 
 #include <stdint.h>
+#include <fcntl.h>
+#include <string.h>
+
+static int marker_fd = -1;
+
+void write_marker(const char *msg) {
+    if (marker_fd >= 0) {
+        write(marker_fd, msg, strlen(msg));
+    }
+}
 
 static inline uint64_t now_ns(void) {
     struct timespec ts;
@@ -58,7 +68,14 @@ int main(int argc, char *argv[]) {
 
     srand(time(NULL));
 
+    // Try to open trace_marker for kernel correlation (requires root on native Linux)
+    marker_fd = open("/sys/kernel/debug/tracing/trace_marker", O_WRONLY);
+
     for (int i = 1; i <= iterations; i++) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "REQ_START %d", i);
+        write_marker(buf);
+
         uint64_t t0 = now_ns();
         
         simulate_memory_setup();
@@ -77,8 +94,13 @@ int main(int argc, char *argv[]) {
         uint64_t completion_ns = t3 - t2;
         uint64_t total_ns = t3 - t0;
         
-        printf("{\"iter\":%d,\"submit_ns\":%lu,\"device_ns\":%lu,\"completion_ns\":%lu,\"total_ns\":%lu}\n",
-               i, submit_ns, device_ns, completion_ns, total_ns);
+        printf("{\"iter\":%d,\"request_id\":%d,\"submit_ns\":%lu,\"device_ns\":%lu,\"completion_ns\":%lu,\"total_ns\":%lu}\n",
+               i, i, submit_ns, device_ns, completion_ns, total_ns);
+
+        snprintf(buf, sizeof(buf), "REQ_END %d", i);
+        write_marker(buf);
     }
+    
+    if (marker_fd >= 0) close(marker_fd);
     return 0;
 }
