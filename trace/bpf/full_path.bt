@@ -1,0 +1,38 @@
+#!/usr/bin/bpftrace
+
+BEGIN {
+    printf("Tracing kernel paths... Hit Ctrl-C to end.\n");
+    printf("%-18s %-6s %-16s %s\n", "TIME_NS", "PID", "COMM", "EVENT");
+}
+
+tracepoint:syscalls:sys_enter_io_uring_enter {
+    printf("%-18u %-6d %-16s sys_enter_io_uring_enter\n", nsecs, pid, comm);
+}
+
+tracepoint:syscalls:sys_exit_io_uring_enter {
+    printf("%-18u %-6d %-16s sys_exit_io_uring_enter\n", nsecs, pid, comm);
+}
+
+tracepoint:irq:irq_handler_entry {
+    printf("%-18u %-6d %-16s irq_handler_entry: irq=%d, name=%s\n", nsecs, pid, comm, args->irq, args->name);
+}
+
+tracepoint:irq:irq_handler_exit {
+    printf("%-18u %-6d %-16s irq_handler_exit: irq=%d\n", nsecs, pid, comm, args->irq);
+}
+
+tracepoint:softirq:softirq_entry {
+    printf("%-18u %-6d %-16s softirq_entry: vec=%d\n", nsecs, pid, comm, args->vec);
+}
+
+tracepoint:softirq:softirq_exit {
+    printf("%-18u %-6d %-16s softirq_exit: vec=%d\n", nsecs, pid, comm, args->vec);
+}
+
+tracepoint:sched:sched_wakeup {
+    printf("%-18u %-6d %-16s sched_wakeup: target_pid=%d, target_comm=%s\n", nsecs, pid, comm, args->pid, args->comm);
+}
+
+tracepoint:sched:sched_switch {
+    printf("%-18u %-6d %-16s sched_switch: prev_pid=%d, next_pid=%d, next_comm=%s\n", nsecs, pid, comm, args->prev_pid, args->next_pid, args->next_comm);
+}

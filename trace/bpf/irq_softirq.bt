@@ -1,0 +1,27 @@
+#!/usr/bin/bpftrace
+
+BEGIN {
+    printf("Tracing IRQ and SoftIRQ duration... Hit Ctrl-C to end.\n");
+}
+
+tracepoint:irq:irq_handler_entry {
+    @irq_start[tid] = nsecs;
+}
+
+tracepoint:irq:irq_handler_exit {
+    if (@irq_start[tid]) {
+        @irq_duration_ns[args->name] = hist(nsecs - @irq_start[tid]);
+        delete(@irq_start[tid]);
+    }
+}
+
+tracepoint:softirq:softirq_entry {
+    @softirq_start[tid] = nsecs;
+}
+
+tracepoint:softirq:softirq_exit {
+    if (@softirq_start[tid]) {
+        @softirq_duration_ns[args->vec] = hist(nsecs - @softirq_start[tid]);
+        delete(@softirq_start[tid]);
+    }
+}

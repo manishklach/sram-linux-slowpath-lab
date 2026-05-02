@@ -38,6 +38,15 @@ total_ns        | 27800    | 28070    | 28300    | 28600    | 29500    | 31000  
 - **Linux submission + completion path dominates**: At microsecond scales (20µs device time), the time spent in the host kernel and userspace prep often exceeds 50% of the total request time.
 - **Removing GUP and interrupt paths reduces latency significantly**: Pre-registering memory (Fixed Buffers) and using Polling are critical for deterministic performance.
 
+## Native Linux Tracing Preview
+
+This repository is designed in two phases:
+
+1. **WSL Mode (Synthetic Model)**: Models latency using high-resolution timers and deterministic busy-waits. Proves the logic that software overhead dominates at microsecond scales.
+2. **Native Linux Mode (Kernel-Path Attribution)**: Uses `bpftrace` on real hardware to measure the true costs of context switches, IRQs, and scheduler wakeups.
+
+The tools for Native Linux are available in the `trace/` directory.
+
 ## Key Insight
 
 - **Median latency ≈ device + small overhead**: At p50, the hardware and software overheads are comparable.

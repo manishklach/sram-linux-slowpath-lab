@@ -1,0 +1,24 @@
+#!/usr/bin/bpftrace
+
+BEGIN {
+    printf("Tracing scheduler wakeup latency... Hit Ctrl-C to end.\n");
+}
+
+tracepoint:sched:sched_wakeup 
+/comm == "baseline" || comm == "polling_sim" || comm == "fixed_buffers_sim"/
+{
+    @wakeup[args->pid] = nsecs;
+}
+
+tracepoint:sched:sched_switch
+{
+    if (@wakeup[args->next_pid]) {
+        $delay = nsecs - @wakeup[args->next_pid];
+        @latency_ns[args->next_comm] = hist($delay);
+        delete(@wakeup[args->next_pid]);
+    }
+}
+
+END {
+    printf("\nWakeup Latency Distribution (ns):\n");
+}
