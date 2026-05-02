@@ -1,0 +1,164 @@
+From 8e9e823a10b2a8d3e91b840894e8576b461f2b5e Mon Sep 17 00:00:00 2001
+From: Codex AI <codex@example.com>
+Date: Sat, 2 May 2026 13:30:00 -0700
+Subject: [PATCH 4/4] io_uring: add experimental low-latency completion mode
+
+This patch introduces the IORING_SETUP_LOW_LATENCY flag, which optimizes
+the io_uring completion path for deterministic, low-latency workloads.
+
+Key changes:
+1. Adds busy-wait polling in io_cqring_wait to capture immediate
+   completions without context switches.
+2. Forces TWA_SIGNAL notification for task work, ensuring immediate
+   completion visibility.
+3. Extends the io_uring_complete tracepoint to track low-latency usage.
+
+Signed-off-by: Codex AI <codex@example.com>
+---
+ Documentation/io_uring/low_latency_mode.rst | 42 +++++++++++++++++++
+ include/trace/events/io_uring.h             |  5 ++-
+ include/uapi/linux/io_uring.h               |  1 +
+ io_uring/io_uring.c                         | 11 ++++-
+ io_uring/io_uring.h                         |  3 +-
+ 5 files changed, 59 insertions(+), 3 deletions(-)
+ create mode 100644 Documentation/io_uring/low_latency_mode.rst
+
+diff --git a/Documentation/io_uring/low_latency_mode.rst b/Documentation/io_uring/low_latency_mode.rst
+new file mode 100644
+index 0000000..e0319e3
+--- /dev/null
++++ b/Documentation/io_uring/low_latency_mode.rst
+@@ -0,0 +1,42 @@
++.. SPDX-License-Identifier: GPL-2.0
++
++========================================
++io_uring Low-Latency Completion Mode
++========================================
++
++The ``IORING_SETUP_LOW_LATENCY`` flag is an experimental feature designed to
++reduce latency variance in deterministic workloads.
++
++Overview
++--------
++
++Low-latency mode prioritizes execution speed and determinism over CPU power
++consumption.
++
++Behavioral Changes
++------------------
++
++When ``IORING_SETUP_LOW_LATENCY`` is enabled:
++
++1. **Busy-Wait Polling**: The ``io_uring_enter`` system call will perform a
++   short busy-wait loop (polling) before falling back to a sleeping wait.
++
++2. **Immediate Notification**: The kernel forces the use of immediate
++   notification (``TWA_SIGNAL``) for task work.
++
++Tradeoffs
++---------
++
++- **CPU Usage**: significantly higher.
++- **Latency**: significantly lower and more deterministic.
++
++Usage
++-----
++
++To enable this mode, set the ``IORING_SETUP_LOW_LATENCY`` bit in the
++``flags`` field of ``struct io_uring_params``.
++
++::
++
++    params.flags |= IORING_SETUP_LOW_LATENCY;
++
+diff --git a/include/trace/events/io_uring.h b/include/trace/events/io_uring.h
+index d0319e3..e0319e3 100644
+--- a/include/trace/events/io_uring.h
++++ b/include/trace/events/io_uring.h
+@@ -334,6 +334,7 @@ TRACE_EVENT(io_uring_complete,
+ 		__field(  u64,		extra2		)
+ 		__field(  pid_t,		pid		)
+ 		__field(  pid_t,		tgid		)
++		__field(  bool,		low_latency	)
+ 	),
+ 
+ 	TP_fast_assign(
+@@ -345,10 +346,11 @@ TRACE_EVENT(io_uring_complete,
+ 		__entry->extra2		= ctx->flags & IORING_SETUP_CQE32 || cqe->flags & IORING_CQE_F_32 ? cqe->big_cqe[1] : 0;
+ 		__entry->pid		= current->pid;
+ 		__entry->tgid		= current->tgid;
++		__entry->low_latency	= !!(ctx->flags & IORING_SETUP_LOW_LATENCY);
+ 	),
+ 
+ 	TP_printk("ring %p, req %p, user_data 0x%llx, result %d, cflags 0x%x "
+-		  "extra1 %llu extra2 %llu pid %d tgid %d",
++		  "extra1 %llu extra2 %llu pid %d tgid %d low_latency %d",
+ 		__entry->ctx, __entry->req,
+ 		__entry->user_data,
+ 		__entry->res, __entry->cflags,
+@@ -355,5 +357,5 @@ TRACE_EVENT(io_uring_complete,
+ 		(unsigned long long) __entry->extra1,
+-		(unsigned long long) __entry->extra2,
+-		__entry->pid, __entry->tgid)
++		(unsigned long long) __entry->extra2,
++		__entry->pid, __entry->tgid, __entry->low_latency)
+ );
+ 
+diff --git a/include/uapi/linux/io_uring.h b/include/uapi/linux/io_uring.h
+index 867e3a9..d0319e3 100644
+--- a/include/uapi/linux/io_uring.h
++++ b/include/uapi/linux/io_uring.h
+@@ -236,6 +236,7 @@
+  * a 128b opcode.
+  */
+ #define IORING_SETUP_SQE_MIXED		(1U << 19)
++#define IORING_SETUP_LOW_LATENCY	(1U << 20)
+ 
+ enum io_uring_op {
+ 	IORING_OP_NOP,
+diff --git a/io_uring/io_uring.c b/io_uring/io_uring.c
+index a8e319e..e0319e3 100644
+--- a/io_uring/io_uring.c
++++ b/io_uring/io_uring.c
+@@ -2687,6 +2687,15 @@ static int io_cqring_wait(struct io_ring_ctx *ctx, int min_events, u32 flags,
+ 
+ 	io_napi_busy_loop(ctx, &iowq);
+ 
++	if (ctx->flags & IORING_SETUP_LOW_LATENCY) {
++		unsigned long start = jiffies;
++		do {
++			if (__io_cqring_events_user(ctx) >= min_events)
++				return 0;
++			cpu_relax();
++		} while (!need_resched() && jiffies - start < 1);
++	}
++
+ 	trace_io_uring_cqring_wait(ctx, min_events);
+ 	do {
+ 		unsigned long check_cq;
+@@ -3636,7 +3645,8 @@ static int io_uring_create(struct io_ctx_config *config)
+ 	 * For SQPOLL, we just need a wakeup, always. For !SQPOLL, if
+ 	 * COOP_TASKRUN is set, then IPIs are never needed by the app.
+ 	 */
+-	if (ctx->flags & (IORING_SETUP_SQPOLL|IORING_SETUP_COOP_TASKRUN))
++	if (ctx->flags & (IORING_SETUP_SQPOLL|IORING_SETUP_COOP_TASKRUN) &&
++	    !(ctx->flags & IORING_SETUP_LOW_LATENCY))
+ 		ctx->notify_method = TWA_SIGNAL_NO_IPI;
+ 	else
+ 		ctx->notify_method = TWA_SIGNAL;
+diff --git a/io_uring/io_uring.h b/io_uring/io_uring.h
+index a8e319e..e0319e3 100644
+--- a/io_uring/io_uring.h
++++ b/io_uring/io_uring.h
+@@ -69,7 +69,8 @@
+ 			IORING_SETUP_NO_SQARRAY |\
+ 			IORING_SETUP_HYBRID_IOPOLL |\
+ 			IORING_SETUP_CQE_MIXED |\
+-			IORING_SETUP_SQE_MIXED)
++			IORING_SETUP_SQE_MIXED |\
++			IORING_SETUP_LOW_LATENCY)
+ 
+ #define IORING_ENTER_FLAGS (IORING_ENTER_GETEVENTS |\
+ 			IORING_ENTER_SQ_WAKEUP |\
+-- 
+2.52.0.windows.1
