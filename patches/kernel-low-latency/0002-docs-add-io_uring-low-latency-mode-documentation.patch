@@ -1,0 +1,64 @@
+From f4e2823a10b2a8d3e91b840894e8576b461f2b5e Mon Sep 17 00:00:00 2001
+From: Codex AI <codex@example.com>
+Date: Sat, 2 May 2026 13:41:00 -0700
+Subject: [PATCH 2/3] docs: add io_uring low-latency mode documentation
+
+Add initial documentation for the IORING_SETUP_LOW_LATENCY flag,
+explaining its purpose, behavior, and tradeoffs.
+
+Signed-off-by: Codex AI <codex@example.com>
+---
+ Documentation/io_uring/low_latency_mode.rst | 42 +++++++++++++++++++++++++++++
+ 1 file changed, 42 insertions(+)
+ create mode 100644 Documentation/io_uring/low_latency_mode.rst
+
+diff --git a/Documentation/io_uring/low_latency_mode.rst b/Documentation/io_uring/low_latency_mode.rst
+new file mode 100644
+index 0000000..e0319e3
+--- /dev/null
++++ b/Documentation/io_uring/low_latency_mode.rst
+@@ -0,0 +1,42 @@
++.. SPDX-License-Identifier: GPL-2.0
++
++========================================
++io_uring Low-Latency Completion Mode
++========================================
++
++The ``IORING_SETUP_LOW_LATENCY`` flag is an experimental feature designed to
++reduce latency variance in deterministic workloads.
++
++Overview
++--------
++
++Low-latency mode prioritizes execution speed and determinism over CPU power
++consumption.
++
++Behavioral Changes
++------------------
++
++When ``IORING_SETUP_LOW_LATENCY`` is enabled:
++
++1. **Busy-Wait Polling**: The ``io_uring_enter`` system call will perform a
++   short busy-wait loop (polling) before falling back to a sleeping wait.
++
++2. **Immediate Notification**: The kernel forces the use of immediate
++   notification (``TWA_SIGNAL``) for task work.
++
++Tradeoffs
++---------
++
++- **CPU Usage**: significantly higher.
++- **Latency**: significantly lower and more deterministic.
++
++Usage
++-----
++
++To enable this mode, set the ``IORING_SETUP_LOW_LATENCY`` bit in the
++``flags`` field of ``struct io_uring_params``.
++
++::
++
++    params.flags |= IORING_SETUP_LOW_LATENCY;
++
+-- 
+2.52.0.windows.1

@@ -1,0 +1,37 @@
+From b5e2823a10b2a8d3e91b840894e8576b461f2b5e Mon Sep 17 00:00:00 2001
+From: Codex AI <codex@example.com>
+Date: Sat, 2 May 2026 13:42:00 -0700
+Subject: [PATCH 3/3] tools: add validation benchmark notes
+
+Provide notes on how to validate the IORING_SETUP_LOW_LATENCY flag
+using userspace benchmarks.
+
+Signed-off-by: Codex AI <codex@example.com>
+---
+ tools/io_uring/low_latency_notes.txt | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+ create mode 100644 tools/io_uring/low_latency_notes.txt
+
+diff --git a/tools/io_uring/low_latency_notes.txt b/tools/io_uring/low_latency_notes.txt
+new file mode 100644
+index 0000000..e0319e3
+--- /dev/null
++++ b/tools/io_uring/low_latency_notes.txt
+@@ -0,0 +1,15 @@
++Validating IORING_SETUP_LOW_LATENCY
++====================================
++
++To validate the effect of the low-latency mode:
++
++1. Use a benchmark that measures the latency of io_uring_enter(GETEVENTS)
++   after a deterministic delay.
++
++2. Compare the p99 latency with and without the IORING_SETUP_LOW_LATENCY
++   flag.
++
++3. Ensure the test is run on a native Linux kernel with consistent
++   CPU frequency settings (e.g., performance governor).
++
++4. Observe the trace_io_uring_complete events to verify low_latency=1.
+-- 
+2.52.0.windows.1
