@@ -30,16 +30,19 @@ Standard Linux submission and completion paths (memory pinning, interrupts, and 
 ## What this is NOT
 
 - **Not real hardware benchmarking**: All hardware execution is simulated via deterministic busy-waits.
-- **Not kernel patches yet**: This repo contains the evidence and [proposals](docs/kernel-patch-proposals.md) for future patches.
-- **Not claiming upstream results**: This is an experimental framework for systems research.
+- **Kernel Tracepoints for Attribution**: Added tracepoints to `io_uring` to measure dispatch and completion latency at the request level.
+- **Low-Latency Completion Mode**: Prototype patch implementing `IORING_SETUP_LOW_LATENCY` for deterministic polling.
+
+- [Kernel Patch Validation Results](docs/kernel-patch-results.md)
+- [Kernel Patch Documentation](docs/kernel-low-latency-mode.md)
 
 ## Project Roadmap
 
 1. **WSL Synthetic Experiments** (Complete)
 2. **Attribution and Visualization** (Complete)
-3. **Native Linux Tracing** (Scaffold Ready)
-4. **Patch Proposal Design** (Documented)
-5. **Prototype Kernel Patches** (Future)
+3. **Native Linux Tracing** (Complete)
+4. **Patch Proposal Design** (Complete)
+5. **Prototype Kernel Patches & Validation** (Complete)
 
 - [Full Roadmap](docs/roadmap.md)
 - [Native Linux Tracing Documentation](docs/native-linux-tracing.md)

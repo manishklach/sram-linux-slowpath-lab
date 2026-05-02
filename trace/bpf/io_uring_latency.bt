@@ -1,0 +1,40 @@
+/*
+ * io_uring latency attribution via kernel tracepoints.
+ * Captures submit, issue, and complete events.
+ */
+
+BEGIN {
+    printf("Tracing io_uring latency... Hit Ctrl-C to end.\n");
+    printf("%-16s %-10s %-16s %-10s %-10s %-10s\n", "TIME", "PID", "EVENT", "REQ", "LATENCY", "MODE");
+}
+
+tracepoint:io_uring:io_uring_submit_req {
+    @start[args->req] = nsecs;
+    @submit_pid[args->req] = pid;
+}
+
+tracepoint:io_uring:io_uring_issue {
+    if (@start[args->req]) {
+        $lat = (nsecs - @start[args->req]) / 1000;
+        printf("%-16llu %-10d %-16s %-10p %-10d %-10s\n", 
+               nsecs, pid, "ISSUE", args->req, $lat, "-");
+        @issue_ts[args->req] = nsecs;
+    }
+}
+
+tracepoint:io_uring:io_uring_complete {
+    if (@start[args->req]) {
+        $total_lat = (nsecs - @start[args->req]) / 1000;
+        $issue_lat = 0;
+        if (@issue_ts[args->req]) {
+            $issue_lat = (nsecs - @issue_ts[args->req]) / 1000;
+        }
+        
+        printf("%-16llu %-10d %-16s %-10p %-10d %-10d\n", 
+               nsecs, pid, "COMPLETE", args->req, $total_lat, args->low_latency);
+               
+        delete(@start[args->req]);
+        delete(@issue_ts[args->req]);
+        delete(@submit_pid[args->req]);
+    }
+}

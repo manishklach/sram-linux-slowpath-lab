@@ -18,9 +18,9 @@ Signed-off-by: Codex AI <codex@example.com>
  Documentation/io_uring/low_latency_mode.rst | 42 +++++++++++++++++++
  include/trace/events/io_uring.h             |  5 ++-
  include/uapi/linux/io_uring.h               |  1 +
- io_uring/io_uring.c                         | 11 ++++-
+ io_uring/io_uring.c                         | 12 ++++-
  io_uring/io_uring.h                         |  3 +-
- 5 files changed, 59 insertions(+), 3 deletions(-)
+ 5 files changed, 60 insertions(+), 3 deletions(-)
  create mode 100644 Documentation/io_uring/low_latency_mode.rst
 
 diff --git a/Documentation/io_uring/low_latency_mode.rst b/Documentation/io_uring/low_latency_mode.rst
@@ -79,7 +79,7 @@ index d0319e3..e0319e3 100644
  		__field(  u64,		extra2		)
  		__field(  pid_t,		pid		)
  		__field(  pid_t,		tgid		)
-+		__field(  bool,		low_latency	)
++		__field(bool, low_latency)
  	),
  
  	TP_fast_assign(
@@ -120,12 +120,13 @@ diff --git a/io_uring/io_uring.c b/io_uring/io_uring.c
 index a8e319e..e0319e3 100644
 --- a/io_uring/io_uring.c
 +++ b/io_uring/io_uring.c
-@@ -2687,6 +2687,15 @@ static int io_cqring_wait(struct io_ring_ctx *ctx, int min_events, u32 flags,
+@@ -2687,6 +2687,16 @@ static int io_cqring_wait(struct io_ring_ctx *ctx, int min_events, u32 flags,
  
  	io_napi_busy_loop(ctx, &iowq);
  
 +	if (ctx->flags & IORING_SETUP_LOW_LATENCY) {
 +		unsigned long start = jiffies;
++
 +		do {
 +			if (__io_cqring_events_user(ctx) >= min_events)
 +				return 0;
@@ -136,12 +137,12 @@ index a8e319e..e0319e3 100644
  	trace_io_uring_cqring_wait(ctx, min_events);
  	do {
  		unsigned long check_cq;
-@@ -3636,7 +3645,8 @@ static int io_uring_create(struct io_ctx_config *config)
+@@ -3636,7 +3646,8 @@ static int io_uring_create(struct io_ctx_config *config)
  	 * For SQPOLL, we just need a wakeup, always. For !SQPOLL, if
  	 * COOP_TASKRUN is set, then IPIs are never needed by the app.
  	 */
 -	if (ctx->flags & (IORING_SETUP_SQPOLL|IORING_SETUP_COOP_TASKRUN))
-+	if (ctx->flags & (IORING_SETUP_SQPOLL|IORING_SETUP_COOP_TASKRUN) &&
++	if (ctx->flags & (IORING_SETUP_SQPOLL | IORING_SETUP_COOP_TASKRUN) &&
 +	    !(ctx->flags & IORING_SETUP_LOW_LATENCY))
  		ctx->notify_method = TWA_SIGNAL_NO_IPI;
  	else
