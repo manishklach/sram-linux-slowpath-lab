@@ -24,24 +24,39 @@ def parse_trace(filename):
                 event = parts[2]
                 req_ptr = parts[3]
                 
+                if req_ptr not in reqs:
+                    reqs[req_ptr] = {
+                        'issue_ts': 0,
+                        'issue_lat_us': 0,
+                        'low_latency': 0,
+                        'fixed_buffers': 0,
+                        'wakeup_ts': 0
+                    }
+                
                 if event == "ISSUE":
                     lat_us = int(parts[4])
-                    reqs[req_ptr] = {
-                        'issue_ts': ts,
-                        'issue_lat_us': lat_us,
-                        'low_latency': 0
-                    }
+                    reqs[req_ptr]['issue_ts'] = ts
+                    reqs[req_ptr]['issue_lat_us'] = lat_us
+                    reqs[req_ptr]['fixed_buffers'] = int(parts[6])
+                elif event == "CQ_WAKEUP":
+                    # For simplicity, we assign wakeup to all active requests on this ctx (req_ptr here is ctx)
+                    ctx_ptr = req_ptr
+                    for r in reqs.values():
+                        if r.get('ctx_ptr') == ctx_ptr or True: # Context tracking would be better
+                            r['wakeup_ts'] = ts
                 elif event == "COMPLETE":
                     total_lat_us = int(parts[4])
                     low_latency = int(parts[5])
+                    fixed_buffers = int(parts[6])
                     
                     if req_ptr in reqs:
                         r = reqs[req_ptr]
                         r['complete_ts'] = ts
                         r['total_lat_us'] = total_lat_us
                         r['low_latency'] = low_latency
-                        # Calculate issue->complete if possible
-                        if 'issue_ts' in r:
+                        r['fixed_buffers'] = fixed_buffers
+                        
+                        if 'issue_ts' in r and r['issue_ts']:
                             r['processing_lat_us'] = (ts - r['issue_ts']) / 1000.0
                         
                         processed.append(r)

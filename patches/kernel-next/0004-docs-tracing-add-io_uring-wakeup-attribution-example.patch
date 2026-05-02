@@ -1,0 +1,44 @@
+From: Antigravity <antigravity@google.com>
+Date: Sat, 2 May 2026 14:15:00 -0700
+Subject: [PATCH 4/4] docs/tracing: add io_uring wakeup attribution example
+
+This documentation patch provides an example of how to use the
+newly introduced io_uring_cq_wakeup tracepoint to measure
+the delay between completion posting and userspace execution.
+
+Example bpftrace logic:
+tracepoint:io_uring:io_uring_complete { @done[args->ctx] = nsecs; }
+tracepoint:io_uring:io_uring_cq_wakeup { 
+    if (@done[args->ctx]) {
+        printf("Wakeup delay: %llu ns\n", nsecs - @done[args->ctx]);
+    }
+}
+
+Signed-off-by: Antigravity <antigravity@google.com>
+---
+ Documentation/trace/io_uring.rst | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/Documentation/trace/io_uring.rst b/Documentation/trace/io_uring.rst
+index ...
+--- a/Documentation/trace/io_uring.rst
++++ b/Documentation/trace/io_uring.rst
+@@ -100,3 +100,18 @@ complete - posted when a request finishes.
+ issue    - posted when a request is dispatched to a driver.
+ submit   - posted when an SQE is accepted from userspace.
+ 
++Wait and Wakeup Attribution
++---------------------------
++
++The `io_uring_cq_wakeup` tracepoint allows measuring the scheduling
++latency of the completion path.
++
++.. code-block:: none
++
++    # bpftrace -e '
++    tracepoint:io_uring:io_uring_complete { @c[args->ctx] = nsecs; }
++    tracepoint:io_uring:io_uring_cq_wakeup {
++        if (@c[args->ctx]) {
++            printf("ctx %p wakeup delay: %d us\n", args->ctx, (nsecs - @c[args->ctx])/1000);
++        }
++    }'

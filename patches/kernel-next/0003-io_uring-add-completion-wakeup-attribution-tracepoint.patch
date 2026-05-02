@@ -1,0 +1,68 @@
+From: Antigravity <antigravity@google.com>
+Date: Sat, 2 May 2026 14:10:00 -0700
+Subject: [PATCH 3/4] io_uring: add completion wakeup attribution tracepoint
+
+Introduce the 'io_uring_cq_wakeup' tracepoint, which is triggered
+when the kernel signals a waiter on the completion queue. This
+is critical for attributing latency between the physical completion
+of an operation and the subsequent execution of the userspace task.
+
+Signed-off-by: Antigravity <antigravity@google.com>
+---
+ include/trace/events/io_uring.h | 26 ++++++++++++++++++++++++++
+ io_uring/io_uring.h             |  7 +++++--
+ 2 files changed, 31 insertions(+), 2 deletions(-)
+
+diff --git a/include/trace/events/io_uring.h b/include/trace/events/io_uring.h
+index 1234567..89abcdef 100644
+--- a/include/trace/events/io_uring.h
++++ b/include/trace/events/io_uring.h
+@@ -719,6 +719,32 @@ TRACE_EVENT(io_uring_local_work_run,
+ 	TP_printk("ring %p, count %d, loops %u", __entry->ctx, __entry->count, __entry->loops)
+ );
+ 
++/**
++ * io_uring_cq_wakeup - called when waking up waiters on the CQ ring
++ */
++TRACE_EVENT(io_uring_cq_wakeup,
++
++	TP_PROTO(struct io_ring_ctx *ctx),
++
++	TP_ARGS(ctx),
++
++	TP_STRUCT__entry(
++		__field(void *,		ctx)
++		__field(pid_t,		pid)
++		__field(pid_t,		tgid)
++	),
++
++	TP_fast_assign(
++		__entry->ctx	= ctx;
++		__entry->pid	= current->pid;
++		__entry->tgid	= current->tgid;
++	),
++
++	TP_printk("ring %p, pid %d, tgid %d",
++		__entry->ctx, __entry->pid, __entry->tgid)
++);
++
+ #endif /* _TRACE_IO_URING_H */
+ 
+ /* This part must be outside protection */
+diff --git a/io_uring/io_uring.h b/io_uring/io_uring.h
+index 1234567..89abcdef 100644
+--- a/io_uring/io_uring.h
++++ b/io_uring/io_uring.h
+@@ -425,7 +425,10 @@ static inline void io_cqring_wake(struct io_ring_ctx *ctx)
+ 	 * decision.
+ 	 */
+ 
+-	__io_wq_wake(&ctx->cq_wait);
++	if (wq_has_sleeper(&ctx->cq_wait)) {
++		if (trace_io_uring_cq_wakeup_enabled())
++			trace_io_uring_cq_wakeup(ctx);
++		__io_wq_wake(&ctx->cq_wait);
++	}
+ }
+ 
+ static inline bool io_sqring_full(struct io_ring_ctx *ctx)

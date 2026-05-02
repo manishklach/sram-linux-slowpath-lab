@@ -1,0 +1,35 @@
+From: Antigravity <antigravity@google.com>
+Date: Sat, 2 May 2026 14:05:00 -0700
+Subject: [PATCH 2/4] io_uring: document low-latency mode and registered buffer recommendation
+
+In deterministic workloads, the memory management overhead of standard
+I/O (pinning and DMA mapping) can be as expensive as the computation itself.
+This patch adds a rate-limited warning when a ring configured with
+IORING_SETUP_LOW_LATENCY is used with non-fixed buffer operations.
+
+This encourages userspace to adopt the registered-buffer fast path.
+
+Signed-off-by: Antigravity <antigravity@google.com>
+---
+ io_uring/io_uring.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/io_uring/io_uring.c b/io_uring/io_uring.c
+index ...
+--- a/io_uring/io_uring.c
++++ b/io_uring/io_uring.c
+@@ -1815,6 +1815,14 @@ static int io_issue_sqe(struct io_kiocb *req, unsigned int issue_flags)
+ 	if (unlikely(!io_assign_file(req, def, issue_flags)))
+ 		return -EBADF;
+ 
++	if (unlikely((req->ctx->flags & IORING_SETUP_LOW_LATENCY) &&
++		     !(req->flags & REQ_F_BUF_NODE) &&
++		     (req->opcode == IORING_OP_READ || req->opcode == IORING_OP_WRITE ||
++		      req->opcode == IORING_OP_READV || req->opcode == IORING_OP_WRITEV))) {
++		pr_warn_ratelimited("io_uring: LOW_LATENCY ring used without registered buffers (opcode %d)\n",
++				    req->opcode);
++	}
++
+ 	ret = __io_issue_sqe(req, issue_flags, def);
+ 
+ 	if (ret == IOU_COMPLETE) {
