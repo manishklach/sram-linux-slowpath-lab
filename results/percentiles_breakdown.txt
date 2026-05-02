@@ -1,0 +1,68 @@
+
+--- results/baseline_pinned.jsonl ---
+p50:
+  total:        40.9µs
+  submit:       10.1µs
+  device:       20.1µs
+  completion:   10.7µs
+p99:
+  total:       190.3µs
+  submit:       10.1µs
+  device:      170.4µs
+  completion:    9.8µs
+p999:
+  total:      1278.1µs
+  submit:     1065.5µs
+  device:       46.9µs
+  completion:  165.8µs
+
+--- results/fixed_buffers_pinned.jsonl ---
+p50:
+  total:        23.2µs
+  submit:        0.0µs
+  device:       20.1µs
+  completion:    3.1µs
+p99:
+  total:        61.7µs
+  submit:        0.0µs
+  device:       58.6µs
+  completion:    3.1µs
+p999:
+  total:       286.7µs
+  submit:        0.0µs
+  device:      283.6µs
+  completion:    3.1µs
+
+--- results/interrupt_pinned.jsonl ---
+p50:
+  total:        25.9µs
+  submit:        0.0µs
+  device:       20.1µs
+  completion:    5.8µs
+p99:
+  total:        94.6µs
+  submit:        0.0µs
+  device:       89.6µs
+  completion:    5.0µs
+p999:
+  total:       453.2µs
+  submit:        0.0µs
+  device:      398.0µs
+  completion:   55.1µs
+
+--- results/polling_pinned.jsonl ---
+p50:
+  total:        21.2µs
+  submit:        0.0µs
+  device:       20.1µs
+  completion:    1.1µs
+p99:
+  total:        78.8µs
+  submit:        0.0µs
+  device:       77.7µs
+  completion:    1.1µs
+p999:
+  total:       480.8µs
+  submit:        0.0µs
+  device:       20.1µs
+  completion:  460.7µs

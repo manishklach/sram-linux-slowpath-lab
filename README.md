@@ -38,6 +38,19 @@ total_ns        | 27800    | 28070    | 28300    | 28600    | 29500    | 31000  
 - **Linux submission + completion path dominates**: At microsecond scales (20µs device time), the time spent in the host kernel and userspace prep often exceeds 50% of the total request time.
 - **Removing GUP and interrupt paths reduces latency significantly**: Pre-registering memory (Fixed Buffers) and using Polling are critical for deterministic performance.
 
+## Key Insight
+
+- **Median latency ≈ device + small overhead**: At p50, the hardware and software overheads are comparable.
+- **Tail latency ≫ device**: At p99 and beyond, latency is driven by:
+  - **Scheduler**: Thread preemption and wakeup delays.
+  - **Completion path**: Context switches for interrupt/softirq handling.
+  - **OS noise**: Background tasks and kernel maintenance.
+
+## What this means
+
+- **Optimizing compute alone is insufficient**: Transitioning to SRAM or faster accelerators only improves the floor (median), but not the ceiling (tail).
+- **Control plane must be optimized**: Real-time kernels, core isolation, and userspace drivers (like io_uring with polling) are required to tame the tail.
+
 ## Limitations (IMPORTANT)
 
 - **WSL-based**: This lab runs in WSL2. While excellent for synthetic modeling, it does not represent native hardware performance.

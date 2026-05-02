@@ -1,0 +1,37 @@
+<svg width="800" height="200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Definitions for markers -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#666" />
+    </marker>
+  </defs>
+
+  <!-- Pipeline Stages -->
+  
+  <!-- Submit -->
+  <rect x="50" y="50" width="120" height="60" rx="10" fill="#2ecc71" stroke="#27ae60" stroke-width="2" />
+  <text x="110" y="85" font-family="Arial" font-size="14" text-anchor="middle" fill="white" font-weight="bold">Submit</text>
+  <text x="110" y="130" font-family="Arial" font-size="12" text-anchor="middle" fill="#27ae60">Variable</text>
+
+  <line x1="170" y1="80" x2="220" y2="80" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+
+  <!-- Device -->
+  <rect x="230" y="50" width="120" height="60" rx="10" fill="#3498db" stroke="#2980b9" stroke-width="2" />
+  <text x="290" y="85" font-family="Arial" font-size="14" text-anchor="middle" fill="white" font-weight="bold">Device (SRAM)</text>
+  <text x="290" y="130" font-family="Arial" font-size="12" text-anchor="middle" fill="#2980b9">STABLE</text>
+
+  <line x1="350" y1="80" x2="400" y2="80" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+
+  <!-- Completion -->
+  <rect x="410" y="50" width="120" height="60" rx="10" fill="#e74c3c" stroke="#c0392b" stroke-width="2" />
+  <text x="470" y="85" font-family="Arial" font-size="14" text-anchor="middle" fill="white" font-weight="bold">Completion</text>
+  <text x="470" y="130" font-family="Arial" font-size="12" text-anchor="middle" fill="#c0392b">Variable</text>
+
+  <line x1="530" y1="80" x2="580" y2="80" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+
+  <!-- Wakeup/Schedule -->
+  <rect x="590" y="50" width="160" height="60" rx="10" fill="#9b59b6" stroke="#8e44ad" stroke-width="2" />
+  <text x="670" y="85" font-family="Arial" font-size="14" text-anchor="middle" fill="white" font-weight="bold">Wakeup / Sched</text>
+  <text x="670" y="130" font-family="Arial" font-size="12" text-anchor="middle" fill="#8e44ad">HIGH VARIANCE</text>
+
+</svg>
