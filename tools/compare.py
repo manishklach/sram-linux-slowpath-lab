@@ -36,7 +36,8 @@ def main():
         'Baseline': 'results/baseline_pinned.jsonl',
         'FixedBuf': 'results/fixed_buffers_pinned.jsonl',
         'Interrupt': 'results/interrupt_pinned.jsonl',
-        'Polling': 'results/polling_pinned.jsonl'
+        'Polling': 'results/polling_pinned.jsonl',
+        'FastPath': 'results/fastpath_pinned.jsonl'
     }
     
     results = {}
@@ -55,7 +56,7 @@ def main():
     baseline_stats = results.get('Baseline')
     baseline_p50 = baseline_stats['p50'] if baseline_stats else None
     
-    for name in ['Baseline', 'FixedBuf', 'Interrupt', 'Polling']:
+    for name in ['Baseline', 'FixedBuf', 'Interrupt', 'Polling', 'FastPath']:
         if name not in results:
             continue
         s = results[name]

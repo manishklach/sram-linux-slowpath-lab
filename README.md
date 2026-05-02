@@ -66,7 +66,20 @@ This repository serves as a bridge from measured latency experiments to future L
 **Important Clarification**:
 - This repository **does not currently contain** Linux kernel patches or modules.
 - It contains the measurement infrastructure, synthetic models, and formal proposals required to justify kernel changes.
-- Actual kernel implementation requires validation on Native Linux first.
+## Fast Path Prototype
+
+This demonstrates: **"What latency looks like if Linux slow paths are removed"**. It models a system with persistent DMA mappings, polling completions, and no per-request syscalls.
+
+- [Fast Path Documentation](docs/fastpath.md)
+
+### Comparison Table (p50)
+
+| Mode | p50 Latency | Description |
+| :--- | :--- | :--- |
+| **Baseline** | ~40 µs | Per-request setup + Interrupts |
+| **FixedBuf** | ~23 µs | Pre-registered buffers |
+| **Polling** | ~21 µs | Deterministic completion |
+| **FastPath** | ~20–21 µs | Ideal optimized path |
 
 ## Key Insight
 
