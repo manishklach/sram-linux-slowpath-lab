@@ -1,112 +1,57 @@
 # SRAM Linux Slowpath Lab
 
-A WSL-compatible lab demonstrating how deterministic SRAM-style inference exposes Linux/host overhead as the dominant latency source.
+A laboratory for measuring and documenting Linux kernel latency overhead in deterministic SRAM-based inference workloads.
 
-## Overview
-This repository provides synthetic benchmarks that model ultra-low latency, deterministic SRAM device execution (e.g., ~20μs inference times). At these microsecond scales, the overhead of the Linux kernel slowpath—memory setup, context switches, and interrupt handling—often dwarfs the actual device execution time.
+## Core Claim
 
-**Note:** This version is built to run entirely inside Ubuntu WSL. It models the latency behavior deterministically to prove the method and the latency model. It does not measure real kernel IRQ behavior, but simulates it to show its relative impact.
+> **"Once compute is deterministic, the OS becomes the bottleneck."**
 
-## Quick Start
+Standard Linux submission and completion paths (memory pinning, interrupts, and scheduling) account for over 50% of total latency for 20µs deterministic inference requests.
 
-Ensure you have `gcc` and `python3` installed.
+- [Read the Core Claim](docs/core-claim.md)
+- [Final Experimental Results](docs/final-results.md)
 
-Build the benchmarks:
-```bash
-./scripts/build.sh
-```
+## What this repo shows
 
-Run all benchmarks and summarize the results:
-```bash
-./scripts/run_all.sh
-```
-
-### Expected Output Example
-```
-=== Baseline ===
-Metric          | Min      | p50      | p95      | p99      | p999     | Max      | Avg     
--------------------------------------------------------------------------------------
-submit_ns       | 4900     | 5020     | 5100     | 5200     | 5500     | 6000     | 5050.00 
-device_ns       | 20000    | 20050    | 20100    | 20200    | 20500    | 21000    | 20060.00
-completion_ns   | 2900     | 3000     | 3100     | 3200     | 3500     | 4000     | 3020.00 
-total_ns        | 27800    | 28070    | 28300    | 28600    | 29500    | 31000    | 28130.00
-```
-
-## What this repo proves
-
-- **Deterministic compute does NOT eliminate latency variance**: Even with a 100% deterministic device simulation, OS-level scheduling introduces significant tail latency.
-- **Linux submission + completion path dominates**: At microsecond scales (20µs device time), the time spent in the host kernel and userspace prep often exceeds 50% of the total request time.
-- **Removing GUP and interrupt paths reduces latency significantly**: Pre-registering memory (Fixed Buffers) and using Polling are critical for deterministic performance.
-
-## Native Linux Tracing Preview
-
-This repository is designed in two phases:
-
-1. **WSL Mode (Synthetic Model)**: Models latency using high-resolution timers and deterministic busy-waits. Proves the logic that software overhead dominates at microsecond scales.
-2. **Native Linux Mode (Kernel-Path Attribution)**: Uses `bpftrace` on real hardware to measure the true costs of context switches, IRQs, and scheduler wakeups.
-
-The tools for Native Linux are available in the `trace/` directory.
-
-## New Capability: Kernel-Path Attribution
-
-We can now measure the exact journey of a request through the kernel:
-`REQ_START` → `Submit` → `Device` → `IRQ` → `Softirq` → `Wakeup` → `Schedule` → `REQ_END`
-
-This allows us to answer: **"Where exactly does the latency come from inside the Linux kernel?"** and isolate scheduler noise from hardware performance.
-
-## From Experiment to Kernel Proposals
-
-This repository serves as a bridge from measured latency experiments to future Linux kernel patch work.
-
-- [Project Roadmap](docs/roadmap.md)
-- [Kernel Patch Proposals](docs/kernel-patch-proposals.md)
-- [Patch Readiness Checklist](docs/patch-readiness.md)
-- [LKML Positioning Strategy](docs/lkml-positioning.md)
-
-**Important Clarification**:
-- This repository **does not currently contain** Linux kernel patches or modules.
-- It contains the measurement infrastructure, synthetic models, and formal proposals required to justify kernel changes.
-## Fast Path Prototype
-
-This demonstrates: **"What latency looks like if Linux slow paths are removed"**. It models a system with persistent DMA mappings, polling completions, and no per-request syscalls.
-
-- [Fast Path Documentation](docs/fastpath.md)
+- **Baseline Linux path doubles latency**: Standard IO patterns add ~20µs of overhead to a 20µs compute task.
+- **Fixed buffers reduce submission overhead**: Pre-registering memory removes the cost of per-request GUP/DMA mapping.
+- **Polling reduces completion overhead**: Bypassing interrupts eliminates context switch and wakeup jitter.
+- **Fastpath demonstrates near-ideal performance**: A fully optimized path collapses latency to near-hardware limits (~20.7µs).
 
 ### Comparison Table (p50)
 
 | Mode | p50 Latency | Description |
 | :--- | :--- | :--- |
-| **Baseline** | ~40 µs | Per-request setup + Interrupts |
-| **FixedBuf** | ~23 µs | Pre-registered buffers |
-| **Polling** | ~21 µs | Deterministic completion |
-| **FastPath** | ~20–21 µs | Ideal optimized path |
+| **Baseline** | ~40.9 µs | Per-request setup + Interrupts |
+| **FixedBuf** | ~23.2 µs | Pre-registered buffers |
+| **Polling** | ~21.2 µs | Deterministic completion |
+| **FastPath** | ~20.7 µs | Ideal optimized path |
 
-## Key Insight
+## What this is NOT
 
-- **Median latency ≈ device + small overhead**: At p50, the hardware and software overheads are comparable.
-- **Tail latency ≫ device**: At p99 and beyond, latency is driven by:
-  - **Scheduler**: Thread preemption and wakeup delays.
-  - **Completion path**: Context switches for interrupt/softirq handling.
-  - **OS noise**: Background tasks and kernel maintenance.
+- **Not real hardware benchmarking**: All hardware execution is simulated via deterministic busy-waits.
+- **Not kernel patches yet**: This repo contains the evidence and [proposals](docs/kernel-patch-proposals.md) for future patches.
+- **Not claiming upstream results**: This is an experimental framework for systems research.
 
-## What this means
+## Project Roadmap
 
-- **Optimizing compute alone is insufficient**: Transitioning to SRAM or faster accelerators only improves the floor (median), but not the ceiling (tail).
-- **Control plane must be optimized**: Real-time kernels, core isolation, and userspace drivers (like io_uring with polling) are required to tame the tail.
+1. **WSL Synthetic Experiments** (Complete)
+2. **Attribution and Visualization** (Complete)
+3. **Native Linux Tracing** (Scaffold Ready)
+4. **Patch Proposal Design** (Documented)
+5. **Prototype Kernel Patches** (Future)
 
-## Limitations (IMPORTANT)
+- [Full Roadmap](docs/roadmap.md)
+- [Native Linux Tracing Documentation](docs/native-linux-tracing.md)
 
-- **WSL-based**: This lab runs in WSL2. While excellent for synthetic modeling, it does not represent native hardware performance.
-- **No real IRQ/softirq tracing**: The kernel paths are simulated via busy-waits and variable delays.
-- **Extreme tail latency**: p999+ results are heavily influenced by the host OS (Windows) and the hypervisor.
+## Getting Started
 
-## Next Phase (Native Linux)
+```bash
+# Build all benchmarks
+./scripts/build.sh
 
-To validate these findings on real hardware, future work involves using `bpftrace` and `ftrace` on a native Linux installation to trace:
-- `sys_enter_io_uring_enter`
-- `pin_user_pages`
-- `dma_map_sg`
-- `irq_handler_entry/exit`
-- `softirq_entry/exit`
-- `sched_wakeup`
-- `sched_switch`
+# Run the full suite pinned to CPU 0
+./scripts/run_all_pinned.sh
+```
+
+See `docs/` for deep dives into [attribution](docs/attribution.md) and [kernel paths](docs/kernel-call-path.md).
