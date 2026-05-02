@@ -32,9 +32,21 @@ completion_ns   | 2900     | 3000     | 3100     | 3200     | 3500     | 4000   
 total_ns        | 27800    | 28070    | 28300    | 28600    | 29500    | 31000    | 28130.00
 ```
 
-## Native Linux Extensions
+## What this repo proves
 
-While WSL is excellent for synthetic modeling, deploying this on native Linux allows for real kernel-path proof. Future extensions of this lab will include `bpftrace`/`ftrace` tracing for:
+- **Deterministic compute does NOT eliminate latency variance**: Even with a 100% deterministic device simulation, OS-level scheduling introduces significant tail latency.
+- **Linux submission + completion path dominates**: At microsecond scales (20µs device time), the time spent in the host kernel and userspace prep often exceeds 50% of the total request time.
+- **Removing GUP and interrupt paths reduces latency significantly**: Pre-registering memory (Fixed Buffers) and using Polling are critical for deterministic performance.
+
+## Limitations (IMPORTANT)
+
+- **WSL-based**: This lab runs in WSL2. While excellent for synthetic modeling, it does not represent native hardware performance.
+- **No real IRQ/softirq tracing**: The kernel paths are simulated via busy-waits and variable delays.
+- **Extreme tail latency**: p999+ results are heavily influenced by the host OS (Windows) and the hypervisor.
+
+## Next Phase (Native Linux)
+
+To validate these findings on real hardware, future work involves using `bpftrace` and `ftrace` on a native Linux installation to trace:
 - `sys_enter_io_uring_enter`
 - `pin_user_pages`
 - `dma_map_sg`
