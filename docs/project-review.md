@@ -1,7 +1,7 @@
 # Project Review: SRAM Linux Slowpath Lab
 
 ## Overview
-The `sram-linux-slowpath-lab` is a high-signal systems research repository that successfully isolates and quantifies the "OS Slowpath" problem for deterministic accelerators. By using a simulated SRAM device with zero compute variance, it forces the Linux control plane's overhead into sharp focus.
+The `sram-inference-kernel-fastpath` is a high-signal systems research repository that successfully isolates and quantifies the "OS Slowpath" problem for deterministic accelerators. By using a simulated SRAM device with zero compute variance, it forces the Linux control plane's overhead into sharp focus.
 
 ## Ratings
 

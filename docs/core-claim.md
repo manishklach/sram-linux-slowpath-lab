@@ -1,9 +1,18 @@
-# Core Claim
+# Core Claim: The Shift to Control Plane Bottlenecks
 
-The findings of this laboratory support the following three systems engineering claims:
+"SRAM-based inference shifts the bottleneck from compute to the Linux control plane. This repo prototypes the missing kernel fast paths required to close that gap."
 
-1. **Deterministic compute does NOT eliminate latency variance**: Even if the accelerator (SRAM) is 100% deterministic, the OS scheduler and interrupt delivery path introduce significant tail latency.
-2. **Linux submission + completion path dominates latency**: For microsecond-scale inference (20µs), the time spent in the host kernel and userspace overhead exceeds the actual computation time.
-3. **Optimized control planes collapse latency**: Removing per-request memory setup (GUP), interrupt delivery, and scheduler interference reduces end-to-end latency to near-hardware limits (~20.7µs).
+## Rationale
 
-> **Conclusion**: Once compute is deterministic, the OS becomes the bottleneck.
+In standard AI workloads, compute (Matrix Multiplication, Attention) is highly variable and dominated by memory bandwidth jitter and non-deterministic cache hierarchies. In this environment, the 20-50µs overhead of the Linux kernel is "noise."
+
+However, next-generation **SRAM-based accelerators** provide near-deterministic compute times. When a hardware device can complete an inference request in exactly 20µs, the Linux kernel's submission and completion path overhead (~20-40µs) becomes the dominant factor in end-to-end latency.
+
+## The Gap
+
+The Linux kernel lacks a specialized "Inference Fast Path" that:
+1. Eliminates per-request memory management (GUP/DMA) overhead.
+2. Bypasses the interrupt/wakeup slowpath via bounded polling.
+3. Provides first-class attribution for hardware vs. software delay.
+
+This project exists to close that gap.

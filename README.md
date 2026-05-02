@@ -1,51 +1,73 @@
-# SRAM Linux Slowpath Lab
+# SRAM Inference Kernel Fastpath
 
-A laboratory for measuring and documenting Linux kernel latency overhead in deterministic SRAM-based inference workloads.
+Experimental Linux fast-path patches for SRAM-based AI inference servers.
 
-## Core Claim
+SRAM-based AI inference makes device execution predictable and low-variance. Once device execution becomes deterministic (often in the tens of microseconds), the Linux host overhead—previously hidden by compute jitter—becomes the primary bottleneck. 
 
-> **"Once compute is deterministic, the OS becomes the bottleneck."**
+The missing layer for next-generation AI infrastructure is a dedicated Linux kernel fast path for submission, buffer registration, completion delivery, polling, wakeups, and attribution. This repository prototypes those fast paths.
 
-Standard Linux submission and completion paths (memory pinning, interrupts, and scheduling) account for over 50% of total latency for 20µs deterministic inference requests.
+## Why SRAM-Based AI Inference Servers Need Linux Fast Paths
 
-- [Read the Core Claim](docs/core-claim.md)
-- [Final Experimental Results](docs/final-results.md)
+- **Predictable Device Execution**: Device execution can be tens of microseconds with near-zero variance.
+- **Comparable Host Overhead**: Standard Linux control plane overhead (interrupts, softirqs, context switches) can be comparable to or greater than the device execution time itself.
+- **General-Purpose Bottlenecks**: Existing Linux I/O and scheduling paths are designed for general-purpose workloads, not for the microsecond-level determinism required by SRAM-based inference.
+- **Measurable Fast Paths**: SRAM inference workloads require bounded, measurable, and opt-in kernel fast paths that bypass legacy slow-path logic without sacrificing system stability.
 
-## What this repo shows
+## Missing Kernel Pieces This Repo Prototypes
 
-- **Baseline Linux path doubles latency**: Standard IO patterns add ~20µs of overhead to a 20µs compute task.
-- **Fixed buffers reduce submission overhead**: Pre-registering memory removes the cost of per-request GUP/DMA mapping.
-- **Polling reduces completion overhead**: Bypassing interrupts eliminates context switch and wakeup jitter.
-- **Fastpath demonstrates near-ideal performance**: A fully optimized path collapses latency to near-hardware limits (~20.7µs).
+This project implements and evaluates several experimental kernel-level optimizations:
 
-### Comparison Table (p50)
+- **io_uring Latency Tracepoints**: High-resolution instrumentation for request lifecycle tracking.
+- **Registered-Buffer Attribution**: Measurement of the performance gap between pinned and unpinned memory paths.
+- **Low-Latency Completion Mode**: An experimental `IORING_SETUP_LOW_LATENCY` flag to prioritize determinism.
+- **Wakeup Attribution Tracepoints**: Capturing the delay between kernel completion and userspace task execution.
+- **Bounded CQ Polling**: Bypassed interrupt paths using bounded, non-destructive busy-wait loops.
+- **Fastpath Runtime Model**: A reference model for microsecond-scale inference request processing.
+- **Validation Tooling**: BPF and trace-based tools for isolating kernel vs. device latency.
 
-| Mode | p50 Latency | Description |
-| :--- | :--- | :--- |
-| **Baseline** | ~40.9 µs | Per-request setup + Interrupts |
-| **FixedBuf** | ~23.2 µs | Pre-registered buffers |
-| **Polling** | ~21.2 µs | Deterministic completion |
-| **FastPath** | ~20.7 µs | Ideal optimized path |
+## Vendor-Relevant Questions
 
-## What this is NOT
+- How much of end-to-end request latency is spent in the device vs. the Linux host?
+- Is completion latency dominated by hardware IRQs, softirqs, task wakeups, or scheduler delays?
+* Do registered (fixed) buffers significantly reduce the per-request submission overhead?
+- Does bounded polling effectively collapse p99 tail latency compared to interrupt-driven completion?
+- Which specific kernel path must be optimized before hardware compute gains are visible to the application?
 
-- **Not real hardware benchmarking**: All hardware execution is simulated via deterministic busy-waits.
-- **Kernel Tracepoints for Attribution**: Added tracepoints to `io_uring` to measure dispatch and completion latency at the request level.
-- **Low-Latency Completion Mode**: Prototype patch implementing `IORING_SETUP_LOW_LATENCY` for deterministic polling.
+## What This Is / Is Not
 
-- [Kernel Patch Validation Results](docs/kernel-patch-results.md)
-- [Kernel Patch Documentation](docs/kernel-low-latency-mode.md)
+**This is:**
+- Experimental Linux kernel fast-path research and prototyping.
+- Reproducible latency modeling for deterministic AI workloads.
+- A collection of kernel patch prototypes for subsystem maintainer review.
+- Validation tooling for hardware-software co-design.
+
+**This is not:**
+- Vendor-specific hardware benchmarking.
+- An upstream-ready kernel patch set.
+- A production-grade driver or firmware.
+- A claim of performance on specific real-world SRAM hardware.
 
 ## Project Roadmap
 
-1. **WSL Synthetic Experiments** (Complete)
-2. **Attribution and Visualization** (Complete)
-3. **Native Linux Tracing** (Complete)
-4. **Patch Proposal Design** (Complete)
-5. **Prototype Kernel Patches & Validation** (Complete)
+1. **Phase 1: Deterministic AI inference model** (Complete)
+2. **Phase 2: Linux slow-path attribution** (Complete)
+3. **Phase 3: Fastpath runtime prototype** (Complete)
+4. **Phase 4: Kernel tracepoint patches** (Complete)
+5. **Phase 5: Low-latency io_uring mode** (Complete)
+6. **Phase 6: Registered-buffer and wakeup attribution** (Complete)
+7. **Phase 7: Bounded CQ Polling** (Planned)
+8. **Phase 8: Native Linux validation** (In-progress)
+9. **Phase 9: Vendor/hardware integration** (Planned)
 
-- [Full Roadmap](docs/roadmap.md)
-- [Native Linux Tracing Documentation](docs/native-linux-tracing.md)
+## Core Claim
+
+> **"SRAM-based inference shifts the bottleneck from compute to the Linux control plane. This repo prototypes the missing kernel fast paths required to close that gap."**
+
+## Limitations and Safety
+
+- **WSL Jitter**: Synthetic experiments on WSL include hypervisor-induced latency; true p999 requires bare-metal validation.
+- **Experimental Status**: These patches are for research purposes and have not been submitted to LKML.
+- **Policy Isolation**: All changes are gated behind opt-in flags to ensure no impact on standard Linux workloads.
 
 ## Getting Started
 
