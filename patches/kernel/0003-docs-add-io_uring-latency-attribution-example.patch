@@ -1,0 +1,84 @@
+From b9e8e23a10b2a8d3e91b840894e8576b461f2b5e Mon Sep 17 00:00:00 2001
+From: Codex AI <codex@example.com>
+Date: Sat, 2 May 2026 13:17:00 -0700
+Subject: [PATCH 3/3] docs: add io_uring latency attribution example
+
+Document how to use the new and updated io_uring tracepoints for
+calculating request-level latency attribution.
+
+Signed-off-by: Codex AI <codex@example.com>
+---
+ Documentation/trace/io_uring-latency.rst | 62 ++++++++++++++++++++++++++++++++
+ 1 file changed, 62 insertions(+)
+ create mode 100644 Documentation/trace/io_uring-latency.rst
+
+diff --git a/Documentation/trace/io_uring-latency.rst b/Documentation/trace/io_uring-latency.rst
+new file mode 100644
+index 0000000..d0319e3
+--- /dev/null
++++ b/Documentation/trace/io_uring-latency.rst
+@@ -0,0 +1,62 @@
++.. SPDX-License-Identifier: GPL-2.0
++
++========================================
++io_uring Latency Attribution with Tracing
++========================================
++
++The io_uring subsystem provides several tracepoints to help diagnose latency
++issues in high-performance applications such as deterministic accelerators,
++low-latency storage, and inference runtimes.
++
++Key Tracepoints
++---------------
++
++- ``io_uring_submit_req``: Called when an SQE is accepted from userspace.
++- ``io_uring_issue``: Called when the request is issued to the underlying op.
++- ``io_uring_complete``: Called when the completion is posted to the CQ.
++
++Latency Attribution
++-------------------
++
++By capturing the timestamps of these events for a specific request (identified
++by the ``req`` pointer or ``user_data``), you can compute the following:
++
++1. **Submission Delay**: ``t(issue) - t(submit)``
++   Time spent in the kernel submission queue, potentially waiting for a
++   worker thread or being deferred.
++
++2. **Execution Time**: ``t(complete) - t(issue)``
++   Time spent by the underlying operation (e.g., driver execution, compute).
++
++3. **Total Roundtrip**: ``t(complete) - t(submit)``
++   End-to-end latency from the perspective of the io_uring subsystem.
++
++Example with bpftrace
++---------------------
++
++The following bpftrace script calculates the execution time for requests:
++
++::
++
++  tracepoint:io_uring:io_uring_issue {
++      @start[args->req] = nsecs;
++  }
++
++  tracepoint:io_uring:io_uring_complete {
++      if (@start[args->req]) {
++          $lat = nsecs - @start[args->req];
++          @latency_ns = hist($lat);
++          delete(@start[args->req]);
++      }
++  }
++
++Fields captured
++---------------
++
++All three tracepoints capture the following common fields:
++
++- ``req``: The internal request pointer (stable identifier).
++- ``user_data``: The application-provided cookie.
++- ``opcode``: The operation code (e.g., IORING_OP_READ).
++- ``pid`` / ``tgid``: The task context.
++
+-- 
+2.52.0.windows.1

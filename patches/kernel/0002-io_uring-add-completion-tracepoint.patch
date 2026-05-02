@@ -1,0 +1,51 @@
+From 7f98e23a10b2a8d3e91b840894e8576b461f2b5e Mon Sep 17 00:00:00 2001
+From: Codex AI <codex@example.com>
+Date: Sat, 2 May 2026 13:16:00 -0700
+Subject: [PATCH 2/3] io_uring: add completion tracepoint refinement
+
+This patch adds pid and tgid to the io_uring_complete tracepoint.
+This enables aligning completion events with their originating tasks
+and computing end-to-end latency from submission or issue.
+
+Signed-off-by: Codex AI <codex@example.com>
+---
+ include/trace/events/io_uring.h | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/include/trace/events/io_uring.h b/include/trace/events/io_uring.h
+index d0319e3..e0319e3 100644
+--- a/include/trace/events/io_uring.h
++++ b/include/trace/events/io_uring.h
+@@ -331,6 +331,8 @@ TRACE_EVENT(io_uring_complete,
+ 		__field(  unsigned,	cflags		)
+ 		__field(  u64,		extra1		)
+ 		__field(  u64,		extra2		)
++		__field(pid_t, pid)
++		__field(pid_t, tgid)
+ 	),
+ 
+ 	TP_fast_assign(
+@@ -340,14 +342,17 @@ TRACE_EVENT(io_uring_complete,
+ 		__entry->cflags		= cqe->flags;
+ 		__entry->extra1		= ctx->flags & IORING_SETUP_CQE32 || cqe->flags & IORING_CQE_F_32 ? cqe->big_cqe[0] : 0;
+ 		__entry->extra2		= ctx->flags & IORING_SETUP_CQE32 || cqe->flags & IORING_CQE_F_32 ? cqe->big_cqe[1] : 0;
++		__entry->pid		= current->pid;
++		__entry->tgid		= current->tgid;
+ 	),
+ 
+ 	TP_printk("ring %p, req %p, user_data 0x%llx, result %d, cflags 0x%x "
+-		  "extra1 %llu extra2 %llu ",
++		  "extra1 %llu extra2 %llu pid %d tgid %d",
+ 		__entry->ctx, __entry->req,
+ 		__entry->user_data,
+ 		__entry->res, __entry->cflags,
+-		(unsigned long long) __entry->extra1,
+-		(unsigned long long) __entry->extra2)
++		(unsigned long long) __entry->extra1,
++		(unsigned long long) __entry->extra2,
++		__entry->pid, __entry->tgid)
+ );
+ 
+ /**
+-- 
+2.52.0.windows.1

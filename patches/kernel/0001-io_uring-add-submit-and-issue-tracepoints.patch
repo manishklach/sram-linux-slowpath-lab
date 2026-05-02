@@ -1,0 +1,106 @@
+From 45f7823a10b2a8d3e91b840894e8576b461f2b5e Mon Sep 17 00:00:00 2001
+From: Codex AI <codex@example.com>
+Date: Sat, 2 May 2026 13:15:00 -0700
+Subject: [PATCH 1/3] io_uring: add submit and issue tracepoints
+
+This patch adds pid/tgid to the existing io_uring_submit_req tracepoint
+and introduces a new io_uring_issue tracepoint.
+
+These tracepoints enable latency attribution by capturing the timestamp
+when a request is accepted from userspace (submit) and when it is
+actually issued to the underlying operation (issue).
+
+Signed-off-by: Codex AI <codex@example.com>
+---
+ include/trace/events/io_uring.h | 49 +++++++++++++++++++++++++++++++++++++++--
+ io_uring/io_uring.c             |  2 ++
+ 2 files changed, 49 insertions(+), 2 deletions(-)
+
+diff --git a/include/trace/events/io_uring.h b/include/trace/events/io_uring.h
+index 867e3a9..d0319e3 100644
+--- a/include/trace/events/io_uring.h
++++ b/include/trace/events/io_uring.h
+@@ -374,6 +374,8 @@ TRACE_EVENT(io_uring_submit_req,
+ 		__field(  u8,			opcode		)
+ 		__field(  unsigned long long,	flags		)
+ 		__field(  bool,			sq_thread	)
++		__field(pid_t, pid)
++		__field(pid_t, tgid)
+ 
+ 		__string( op_str, io_uring_get_opcode(req->opcode) )
+ 	),
+@@ -384,14 +386,55 @@ TRACE_EVENT(io_uring_submit_req,
+ 		__entry->opcode		= req->opcode;
+ 		__entry->flags		= (__force unsigned long long) req->flags;
+ 		__entry->sq_thread	= req->ctx->flags & IORING_SETUP_SQPOLL;
++		__entry->pid		= current->pid;
++		__entry->tgid		= current->tgid;
+ 
+ 		__assign_str(op_str);
+ 	),
+ 
+ 	TP_printk("ring %p, req %p, user_data 0x%llx, opcode %s, flags 0x%llx, "
+-		  "sq_thread %d", __entry->ctx, __entry->req,
++		  "sq_thread %d, pid %d, tgid %d", __entry->ctx, __entry->req,
+ 		  __entry->user_data, __get_str(op_str), __entry->flags,
+-		  __entry->sq_thread)
++		  __entry->sq_thread, __entry->pid, __entry->tgid)
++);
++
++/**
++ * io_uring_issue - called when a request is issued to the underlying op
++ *
++ * @req:		pointer to the request being issued
++ *
++ * Allows to track the start of the actual operation execution, useful for
++ * latency attribution between submission and issue.
++ */
++TRACE_EVENT(io_uring_issue,
++
++	TP_PROTO(struct io_kiocb *req),
++
++	TP_ARGS(req),
++
++	TP_STRUCT__entry(
++		__field(void *, ctx)
++		__field(void *, req)
++		__field(unsigned long long, user_data)
++		__field(u8, opcode)
++		__field(pid_t, pid)
++		__field(pid_t, tgid)
++
++		__string(op_str, io_uring_get_opcode(req->opcode))
++	),
++
++	TP_fast_assign(
++		__entry->ctx		= req->ctx;
++		__entry->req		= req;
++		__entry->user_data	= req->cqe.user_data;
++		__entry->opcode		= req->opcode;
++		__entry->pid		= current->pid;
++		__entry->tgid		= current->tgid;
++
++		__assign_str(op_str);
++	),
++
++	TP_printk("ring %p, req %p, user_data 0x%llx, opcode %s, pid %d, tgid %d",
++		  __entry->ctx, __entry->req, __entry->user_data,
++		  __get_str(op_str), __entry->pid, __entry->tgid)
+ );
+ 
+ /*
+diff --git a/io_uring/io_uring.c b/io_uring/io_uring.c
+index a8e319e..e0319e3 100644
+--- a/io_uring/io_uring.c
++++ b/io_uring/io_uring.c
+@@ -1790,6 +1790,8 @@ static inline int __io_issue_sqe(struct io_kiocb *req,
+ 	if (!def->audit_skip)
+ 		audit_uring_entry(req->opcode);
+ 
++	trace_io_uring_issue(req);
++
+ 	ret = def->issue(req, issue_flags);
+ 
+ 	if (!def->audit_skip)
+-- 
+2.52.0.windows.1
