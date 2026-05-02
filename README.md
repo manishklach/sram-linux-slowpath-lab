@@ -1,21 +1,31 @@
 # SRAM Inference Kernel Fastpath
 
+### TL;DR
+- **The Problem**: In deterministic AI inference (~20µs), Linux host overhead (interrupts, wakeups, GUP) can match or exceed compute time.
+- **The Solution**: This repo prototypes the missing Linux kernel fast paths required to remove that gap.
+- **Key Takeaway**: Once AI inference becomes deterministic, the OS becomes the bottleneck.
+
+## Core Claim
+> **SRAM-based inference shifts the bottleneck from compute to the Linux control plane. This repo prototypes the missing kernel fast paths required to close that gap.**
+
+---
+
 Experimental Linux fast-path patches for SRAM-based AI inference servers.
 
-SRAM-based AI inference makes device execution predictable and low-variance. Once device execution becomes deterministic (often in the tens of microseconds), the Linux host overhead—previously hidden by compute jitter—becomes the primary bottleneck. 
-
-The missing layer for next-generation AI infrastructure is a dedicated Linux kernel fast path for submission, buffer registration, completion delivery, polling, wakeups, and attribution. This repository prototypes those fast paths.
+When device execution is deterministic and low-variance (often in the tens of microseconds), the Linux host overhead—previously hidden by compute jitter—becomes the primary bottleneck. This project implements the missing layer for next-generation AI infrastructure: dedicated fast paths for submission, buffer registration, completion delivery, and attribution.
 
 ## Why SRAM-Based AI Inference Servers Need Linux Fast Paths
 
 - **Predictable Device Execution**: Device execution can be tens of microseconds with near-zero variance.
-- **Comparable Host Overhead**: Standard Linux control plane overhead (interrupts, softirqs, context switches) can be comparable to or greater than the device execution time itself.
-- **General-Purpose Bottlenecks**: Existing Linux I/O and scheduling paths are designed for general-purpose workloads, not for the microsecond-level determinism required by SRAM-based inference.
-- **Measurable Fast Paths**: SRAM inference workloads require bounded, measurable, and opt-in kernel fast paths that bypass legacy slow-path logic without sacrificing system stability.
+- **Comparable Host Overhead**: Standard Linux control plane overhead (interrupts, softirqs, context switches) is often comparable to device execution.
+- **General-Purpose Bottlenecks**: Existing Linux I/O and scheduling paths are designed for general-purpose workloads, not microsecond-level determinism.
+- **Need for Fast Paths**: High-performance accelerators require bounded, measurable, and opt-in kernel fast paths that bypass legacy slow-path logic.
+
+**Without these fast paths, hardware improvements are not visible at the application level.**
 
 ## Missing Kernel Pieces This Repo Prototypes
 
-This project implements and evaluates several experimental kernel-level optimizations:
+This repo prototypes the kernel-level fast paths required for low-latency AI inference:
 
 - **io_uring Latency Tracepoints**: High-resolution instrumentation for request lifecycle tracking.
 - **Registered-Buffer Attribution**: Measurement of the performance gap between pinned and unpinned memory paths.
@@ -29,9 +39,11 @@ This project implements and evaluates several experimental kernel-level optimiza
 
 - How much of end-to-end request latency is spent in the device vs. the Linux host?
 - Is completion latency dominated by hardware IRQs, softirqs, task wakeups, or scheduler delays?
-* Do registered (fixed) buffers significantly reduce the per-request submission overhead?
+- Do registered (fixed) buffers significantly reduce the per-request submission overhead?
 - Does bounded polling effectively collapse p99 tail latency compared to interrupt-driven completion?
 - Which specific kernel path must be optimized before hardware compute gains are visible to the application?
+
+**These determine whether accelerator improvements translate into real-world latency gains.**
 
 ## What This Is / Is Not
 
@@ -59,10 +71,6 @@ This project implements and evaluates several experimental kernel-level optimiza
 8. **Phase 8: Native Linux validation** (In-progress)
 9. **Phase 9: Vendor/hardware integration** (Planned)
 
-## Core Claim
-
-> **"SRAM-based inference shifts the bottleneck from compute to the Linux control plane. This repo prototypes the missing kernel fast paths required to close that gap."**
-
 ## Limitations and Safety
 
 - **WSL Jitter**: Synthetic experiments on WSL include hypervisor-induced latency; true p999 requires bare-metal validation.
@@ -79,4 +87,16 @@ This project implements and evaluates several experimental kernel-level optimiza
 ./scripts/run_all_pinned.sh
 ```
 
-See `docs/` for deep dives into [attribution](docs/attribution.md) and [kernel paths](docs/kernel-call-path.md).
+## Takeaway
+
+**Once AI inference becomes deterministic, the OS becomes the bottleneck.**
+
+---
+
+### GitHub About Suggestion
+
+**Description**:
+Experimental Linux kernel fast-path patches for SRAM-based AI inference servers, targeting io_uring submission, registered buffers, CQ polling, wakeup attribution, and completion latency.
+
+**Topics**:
+linux-kernel, io-uring, ai-inference, sram, low-latency, kernel-fastpath, kernel-tracing, bpftrace, inference-systems, ai-infrastructure, systems-performance, performance-analysis, async-io, benchmarking, operating-systems
