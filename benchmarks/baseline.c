@@ -19,9 +19,27 @@ void simulate_sram_execution() {
 
 void simulate_memory_setup() {
     long start = get_ns();
-    while (get_ns() - start < 5000) {
-        // busy wait 5us for memory setup
+    while (get_ns() - start < 10000) {
+        // busy wait 10us for memory setup
     }
+}
+
+long get_completion_delay_ns() {
+    int r = rand() % 10000;
+    long delay = 5000; // reduced base
+
+    if (r < 5000) {
+        delay += 4000; // ~9k
+    } else if (r < 9500) {
+        delay += 4000 + (r - 5000) * 11000 / 4500; // up to 15k
+    } else if (r < 9900) {
+        delay += 15000 + (r - 9500) * 10000 / 400; // up to 25k
+    } else if (r < 9990) {
+        delay += 25000 + (r - 9900) * 10000 / 90; // up to 35k
+    } else {
+        delay += 35000 + (rand() % 10000);
+    }
+    return delay;
 }
 
 int main(int argc, char *argv[]) {
@@ -29,6 +47,8 @@ int main(int argc, char *argv[]) {
     if (argc > 1) {
         iterations = atoi(argv[1]);
     }
+
+    srand(time(NULL));
 
     for (int i = 1; i <= iterations; i++) {
         long t0 = get_ns();
@@ -41,7 +61,8 @@ int main(int argc, char *argv[]) {
         
         // Simulating completion overhead
         long start_completion = get_ns();
-        while (get_ns() - start_completion < 3000) {} // 3us completion
+        long target_delay = get_completion_delay_ns();
+        while (get_ns() - start_completion < target_delay) {}
         long t3 = get_ns();
         
         long submit_ns = t1 - t0;
