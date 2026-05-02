@@ -54,6 +54,20 @@ We can now measure the exact journey of a request through the kernel:
 
 This allows us to answer: **"Where exactly does the latency come from inside the Linux kernel?"** and isolate scheduler noise from hardware performance.
 
+## From Experiment to Kernel Proposals
+
+This repository serves as a bridge from measured latency experiments to future Linux kernel patch work.
+
+- [Project Roadmap](docs/roadmap.md)
+- [Kernel Patch Proposals](docs/kernel-patch-proposals.md)
+- [Patch Readiness Checklist](docs/patch-readiness.md)
+- [LKML Positioning Strategy](docs/lkml-positioning.md)
+
+**Important Clarification**:
+- This repository **does not currently contain** Linux kernel patches or modules.
+- It contains the measurement infrastructure, synthetic models, and formal proposals required to justify kernel changes.
+- Actual kernel implementation requires validation on Native Linux first.
+
 ## Key Insight
 
 - **Median latency ≈ device + small overhead**: At p50, the hardware and software overheads are comparable.
