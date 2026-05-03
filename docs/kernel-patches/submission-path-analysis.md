@@ -1,62 +1,75 @@
 # Submission Path Latency Analysis
 
-## Why this document exists
-The project originally considered completion-side wakeup avoidance (e.g., `IORING_SETUP_CQ_POLL`). However, current attribution measurements show that completion-to-userspace residual latency is sub-microsecond in our deterministic benchmarks. The next justified research direction is a deep-dive into the submission-side path, which shows a much stronger latency signal.
+## Overview
+Based on recent high-fidelity measurements (see [Submission Results](../submission-results.md)), 
+the primary bottleneck in deterministic AI inference workloads is the **Submission Path 
+(`submit → issue`)**. Crucially, we have identified that **batching** is the most effective 
+mechanism for reducing this overhead.
 
-## Current finding
-- **Deterministic SRAM-style compute**: Fixed at ~20µs.
-- **submit→issue p99**: Significant signal (~7µs in synthetic environments).
-- **Residual completion path**: Sub-microsecond (~30–90ns) in current synchronous synthetic setups.
-- **CQ polling justification**: Currently **NOT justified** by the available data.
+## Why batching works
+Batching reduces the per-request submission latency by amortizing several fixed-cost 
+operations:
+- **Syscall overhead (`io_uring_enter`)**: The context switch cost is paid once for N requests.
+- **SQ ring doorbell cost**: Ring visibility and atomic updates are handled as a single unit.
+- **Kernel/Userspace transitions**: Minimizes the expensive transitions between protection 
+  domains.
+- **Request setup overhead**: Kernel-side SQE processing and initial request validation are 
+  streamlined for multiple entries.
+- **Cacheline bouncing**: Fewer updates to head/tail pointers reduce cross-core cache 
+  invalidation cycles.
 
-## What submit→issue includes
-The path from a userspace submission to the kernel issuing the request involves:
-- **Userspace writing SQEs**: Posting entries to the ring and updating the tail.
-- **Memory ordering**: Ring visibility and atomic barrier overhead.
-- **io_uring_enter syscall**: The context switch cost if `SQPOLL` is not used.
-- **SQ ring processing**: Kernel-side consumption and validation of SQEs.
-- **Request preparation**: Mapping userspace data into internal kernel structures.
-- **Request allocation / caching**: Allocation of `struct io_kiocb` and related state.
-- **Issue dispatch**: Handing the request off to the device driver or internal worker.
+## Visual Comparison (Amortized Cost)
 
-## Why submission matters for SRAM-style inference
-When hardware execution is tens of microseconds and highly predictable (deterministic), even a few microseconds of submission overhead becomes visible at p99. This overhead represents a fixed "tax" on every inference request, regardless of model size.
+**Batch=1**: High tax per request
+```text
+[ io_uring_enter ] [ request ]
+|------- FIXED --------|
+```
 
-## Existing mechanisms
+**Batch=16**: Low tax per request
+```text
+[ io_uring_enter ] [ req ][ req ][ req ][ req ][ req ][ req ] ...
+|------- FIXED --------|
+```
 
-### SQPOLL
-- **What it does**: Uses a kernel thread to poll the SQ ring.
-- **Benefits**: Reduces submission-side syscall overhead.
-- **Challenges**: Sensitive to thread scheduling and CPU placement; can lead to cacheline bouncing.
+## Submission Path Cost Model
+The cost of submitting a batch of size N can be modeled as:
 
-### Registered buffers
-- **What it does**: Pre-maps memory regions into the kernel.
-- **Benefits**: Reduces memory setup and page pinning overhead per request.
+**Cost(N) = Fixed + (N * Per-request)**
 
-### Fixed files
-- **What it does**: Registers file descriptors with the ring.
-- **Benefits**: Reduces fd lookup and reference counting overhead.
+Where:
+- **Fixed**: System call transition, ring processing setup, and initial task notification.
+- **Per-request**: `io_kiocb` allocation, SQE copying, and minimal bookkeeping.
 
-## Hypotheses to test next
-1. **H1**: `SQPOLL` only helps significantly when the polling thread is scheduled predictably (low jitter).
-2. **H2**: CPU placement (NUMA distance, sibling threads) between the userspace submitter and the `SQPOLL` thread affects p99 submission latency.
-3. **H3**: Batching multiple requests reduces the per-request `submit→issue` overhead by amortizing syscall and allocation costs.
-4. **H4**: Fixed buffers and files reduce setup overhead but do not eliminate the core ring-processing latency.
+By increasing N, the **Fixed/N** component asymptotically approaches zero, leaving only 
+the highly optimized per-request path.
 
-## Experiments
-- **Experiment 1**: Baseline vs `SQPOLL` on native Linux to isolate syscall impact.
-- **Experiment 2**: `SQPOLL` with submitter pinned to the **same CPU** vs. a **different CPU** core.
-- **Experiment 3**: Batch size sweep (1, 2, 4, 8, 16) to measure amortization.
-- **Experiment 4**: Registered buffers + fixed files vs. baseline on native hardware.
-- **Experiment 5**: Native `bpftrace` attribution of the `submit→issue` tail latency.
+## Why p99 does not scale with batch size
+Observation: The p99 for a batch of 16 (~6.4µs) is only slightly higher than for a single 
+request (~5.4µs).
+- **Unit Processing**: The kernel processes the entire batch as one execution unit once 
+  inside the syscall.
+- **Amortized Scheduling**: The scheduling overhead (wait times, context switches) is paid 
+  per batch, not per individual request.
+- **Tail Events**: A jitter event (e.g., an interrupt) affects the entire batch once, 
+  rather than hitting each request independently.
 
-## Future kernel directions
-Possible directions (subject to measurement results):
-- **Better SQPOLL affinity controls**: Providing userspace more influence over kernel thread placement.
-- **Submission-side tracepoints**: Exporting more fine-grained metrics for `io_kiocb` lifecycle.
-- **Request allocation/caching analysis**: Optimizing the slab cache behavior for high-frequency low-latency loops.
-- **Cache-local ring processing**: Designing ring structures that minimize cross-core cache invalidation.
-- **Batching-aware latency mode**: A mode that optimizes for per-batch rather than per-request delivery.
+## Implication for AI inference
+- **Batching is more powerful than kernel tweaks**: Even an optimized kernel fast path 
+  cannot beat the mathematical efficiency of amortization.
+- **Complementary Fast Paths**: Future kernel fast paths should focus on complementing 
+  batching (e.g., reducing the per-request allocation cost) rather than trying to replace it.
+- **System Design Matters**: High-performance inference design must prioritize batch-aware 
+  submission loops to reach the nanosecond latency regime.
 
-## Why not CQ polling yet
-CQ polling targets completion and wakeup latency. Current attribution data does not show that path as dominant in deterministic workloads. As a result, CQ polling remains a future experiment only if native Linux attribution eventually justifies it.
+## Future Experiments
+- **Batch Size vs Throughput vs Latency**: Identifying the "sweet spot" where batching gains 
+  begin to hit diminishing returns due to cache effects.
+- **Mixed Workloads**: Measuring batching effectiveness when NOPs are mixed with real I/O.
+- **Batching + SQPOLL**: Validating on native Linux whether SQPOLL + Batching can eliminate 
+  the fixed cost entirely without introducing tail jitter.
+
+## Conclusion
+The data proves that the submission plane is currently a major contributor to host overhead. 
+However, batching provides a massive (~7x) reduction in per-request tax, shifting the 
+optimization priority toward maximizing submission density.

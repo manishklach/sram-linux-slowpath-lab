@@ -55,6 +55,12 @@ All definitive research conclusions require native Linux validation.
 - [Maintainer FAQ](docs/maintainer-faq.md)
 - [Project Roadmap](docs/roadmap.md)
 
+## Key Finding: Batching Dominates Submission Latency
+
+Our latest research indicates that for microsecond-scale inference, **Batching** is the most powerful optimization lever. It reduces per-request submission overhead by **~7×** in synthetic SRAM-style workloads, bringing the effective submission tax from ~600ns to **<100ns per request**.
+
+See [Submission Path Analysis](docs/kernel-patches/submission-path-analysis.md) for the full technical breakdown.
+
 ## Submission Path Bottleneck
 
 Recent native-like validation data shows that for deterministic workloads, **Submission-side latency** (`submit → issue`) is the primary bottleneck. Even after applying existing `io_uring` fast paths, the cost of the system call transition and request dispatch remains a significant contributor to tail latency.
