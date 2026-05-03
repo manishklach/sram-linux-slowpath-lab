@@ -61,6 +61,12 @@ Our latest research indicates that for microsecond-scale inference, **Batching**
 
 See [Submission Path Analysis](docs/kernel-patches/submission-path-analysis.md) for the full technical breakdown.
 
+## Optimal Batching Strategy
+
+There exists a batch size range (8–16) that minimizes per-request overhead without significantly increasing base latency. Pushing beyond batch 16 yields diminishing returns and increases total end-to-end time.
+
+See [Batch Sweep Results](docs/batch-sweep-results.md) for the optimization data.
+
 ## Submission Path Bottleneck
 
 Recent native-like validation data shows that for deterministic workloads, **Submission-side latency** (`submit → issue`) is the primary bottleneck. Even after applying existing `io_uring` fast paths, the cost of the system call transition and request dispatch remains a significant contributor to tail latency.
