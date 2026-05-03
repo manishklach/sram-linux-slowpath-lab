@@ -1,22 +1,23 @@
 /*
  * io_uring latency attribution via kernel tracepoints.
- * Captures submit, issue, and complete events.
+ * Captures submit, issue, complete, wakeup, and sched-in.
  */
 
 BEGIN {
     printf("Tracing io_uring latency... Hit Ctrl-C to end.\n");
-    printf("%-16s %-10s %-16s %-10s %-10s %-10s\n", "TIME", "PID", "EVENT", "REQ", "LATENCY", "MODE");
+    printf("%-16s %-10s %-16s %-16s %-10s %-10s %-5s\n", "TIME", "PID", "EVENT", "TARGET", "LATENCY", "MODE", "FIXED");
 }
 
 tracepoint:io_uring:io_uring_submit_req {
     @start[args->req] = nsecs;
     @submit_pid[args->req] = pid;
+    @ctx[args->req] = args->ctx;
 }
 
 tracepoint:io_uring:io_uring_issue {
     if (@start[args->req]) {
         $lat = (nsecs - @start[args->req]) / 1000;
-        printf("%-16llu %-10d %-16s %-10p %-10d %-10s %-5d\n", 
+        printf("%-16llu %-10d %-16s %-16p %-10d %-10s %-5d\n", 
                nsecs, pid, "ISSUE", args->req, $lat, "-", args->fixed_buffers);
         @issue_ts[args->req] = nsecs;
     }
@@ -25,16 +26,38 @@ tracepoint:io_uring:io_uring_issue {
 tracepoint:io_uring:io_uring_complete {
     if (@start[args->req]) {
         $total_lat = (nsecs - @start[args->req]) / 1000;
-        printf("%-16llu %-10d %-16s %-10p %-10d %-10d %-5d\n", 
+        printf("%-16llu %-10d %-16s %-16p %-10d %-10d %-5d\n", 
                nsecs, pid, "COMPLETE", args->req, $total_lat, args->low_latency, args->fixed_buffers);
+        
+        @complete_ts[args->ctx] = nsecs;
                
         delete(@start[args->req]);
         delete(@issue_ts[args->req]);
+        @last_submitter[args->ctx] = @submit_pid[args->req];
         delete(@submit_pid[args->req]);
+        delete(@ctx[args->req]);
     }
 }
 
 tracepoint:io_uring:io_uring_cq_wakeup {
-    printf("%-16llu %-10d %-16s %-10p %-10s %-10s\n", 
-           nsecs, pid, "CQ_WAKEUP", args->ctx, "-", "-");
+    if (@complete_ts[args->ctx]) {
+        $lat = (nsecs - @complete_ts[args->ctx]) / 1000;
+        printf("%-16llu %-10d %-16s %-16p %-10d %-10s %-5s\n", 
+               nsecs, pid, "CQ_WAKEUP", args->ctx, $lat, "-", "-");
+        
+        $target_pid = @last_submitter[args->ctx];
+        if ($target_pid) {
+            @waiting_for_sched[$target_pid] = nsecs;
+        }
+        delete(@complete_ts[args->ctx]);
+    }
+}
+
+tracepoint:sched:sched_switch {
+    if (@waiting_for_sched[args->next_pid]) {
+        $lat = (nsecs - @waiting_for_sched[args->next_pid]) / 1000;
+        printf("%-16llu %-10d %-16s %-16d %-10d %-10s %-5s\n", 
+               nsecs, args->next_pid, "SCHED_IN", args->next_pid, $lat, "-", "-");
+        delete(@waiting_for_sched[args->next_pid]);
+    }
 }
