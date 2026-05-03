@@ -1,0 +1,12 @@
+# Force C as the dominant language
+*.py linguist-vendored
+*.sh linguist-vendored
+
+# Ensure .patch files are treated as C for highlighting and detection
+*.patch linguist-language=C
+*.patch linguist-detectable=true
+
+# Mark documentation as vendored to keep them out of language stats
+docs/* linguist-vendored
+scripts/* linguist-vendored
+tools/* linguist-vendored
