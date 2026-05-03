@@ -59,8 +59,11 @@ To provide a comprehensive evaluation, the validation harness supports two disti
 - **NOP mode**: Measures raw `io_uring` ring overhead with minimal operations.
 - **SRAM20 mode**: Implements a deterministic AI inference model using a 20µs busy-wait to simulate predictable hardware execution.
 
-Results and attribution breakdown:
-- [Existing Fast Path Validation Results](docs/kernel-fastpath-gap-results.md)
+## Native Linux Validation Required
+
+**WSL2 results are preliminary.** Because WSL2 runs inside a hypervisor, scheduling artifacts and virtualized interrupt delivery introduce noise that can mask microsecond-scale kernel bottlenecks. Definitive conclusions and attribution results require bare-metal Linux.
+
+See [Native Linux Validation Guide](docs/native-linux-validation.md) for instructions on performing high-fidelity measurement.
 
 ## What This Is / Is Not
 

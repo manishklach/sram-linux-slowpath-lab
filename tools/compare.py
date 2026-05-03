@@ -31,53 +31,64 @@ def format_us(ns):
         return f"{ns / 1000000:.2f}ms"
     return f"{ns / 1000:.1f}µs"
 
-def print_table(title, files):
-    results = {}
-    for name, path in files.items():
-        stats = get_stats(path)
-        if stats:
-            results[name] = stats
-            
+def print_table(title, results):
     if not results:
         return
 
     print(f"\n### {title}")
-    print("| Mode      | p50     | p95     | p99     | p999    | Max     | Avg     | vs Baseline |")
-    print("|-----------|---------|---------|---------|---------|---------|---------|-------------|")
+    print("| Mode           | p50     | p95     | p99     | p999    | Max     | Avg     | vs Baseline |")
+    print("|----------------|---------|---------|---------|---------|---------|---------|-------------|")
     
-    baseline_stats = results.get('Baseline')
+    baseline_stats = None
+    for name in results:
+        if 'baseline' in name.lower():
+            baseline_stats = results[name]
+            break
+            
     baseline_p50 = baseline_stats['p50'] if baseline_stats else None
     
-    for name in ['Baseline', 'SQPOLL', 'SQPOLL_Buf', 'SQPOLL_Fixed']:
-        if name not in results:
-            continue
-        s = results[name]
-        
+    for name, s in results.items():
         improvement = ""
-        if baseline_p50 and name != 'Baseline':
+        if baseline_p50 and s != baseline_stats:
             imp = (baseline_p50 - s['p50']) / baseline_p50 * 100
             improvement = f"{imp:+.1f}%"
             
-        print(f"| {name:<9} | {format_us(s['p50']):<7} | {format_us(s['p95']):<7} | {format_us(s['p99']):<7} | {format_us(s['max']):<7} | {format_us(s['avg']):<7} | {improvement:<11} |")
+        print(f"| {name:<14} | {format_us(s['p50']):<7} | {format_us(s['p95']):<7} | {format_us(s['p99']):<7} | {format_us(s['p999']):<7} | {format_us(s['max']):<7} | {format_us(s['avg']):<7} | {improvement:<11} |")
 
 def main():
-    tracks = {
-        "NOP Track (Raw Overhead)": {
-            'Baseline': 'results/nop_baseline.jsonl',
-            'SQPOLL': 'results/nop_sqpoll.jsonl',
-            'SQPOLL_Buf': 'results/nop_sqpoll_buf.jsonl',
-            'SQPOLL_Fixed': 'results/nop_sqpoll_buf_file.jsonl'
-        },
-        "SRAM20 Track (Deterministic Inference)": {
-            'Baseline': 'results/sram20_baseline.jsonl',
-            'SQPOLL': 'results/sram20_sqpoll.jsonl',
-            'SQPOLL_Buf': 'results/sram20_sqpoll_buf.jsonl',
-            'SQPOLL_Fixed': 'results/sram20_sqpoll_buf_file.jsonl'
+    if len(sys.argv) > 1:
+        # Use provided files
+        results = {}
+        for path in sys.argv[1:]:
+            name = os.path.basename(path).replace(".jsonl", "")
+            stats = get_stats(path)
+            if stats:
+                results[name] = stats
+        print_table("Manual Comparison", results)
+    else:
+        # Fallback to defaults
+        tracks = {
+            "NOP Track (Raw Overhead)": {
+                'Baseline': 'results/nop_baseline.jsonl',
+                'SQPOLL': 'results/nop_sqpoll.jsonl',
+                'SQPOLL_Buf': 'results/nop_sqpoll_buf.jsonl',
+                'SQPOLL_Fixed': 'results/nop_sqpoll_buf_file.jsonl'
+            },
+            "SRAM20 Track (Deterministic Inference)": {
+                'Baseline': 'results/sram20_baseline.jsonl',
+                'SQPOLL': 'results/sram20_sqpoll.jsonl',
+                'SQPOLL_Buf': 'results/sram20_sqpoll_buf.jsonl',
+                'SQPOLL_Fixed': 'results/sram20_sqpoll_buf_file.jsonl'
+            }
         }
-    }
-    
-    for title, files in tracks.items():
-        print_table(title, files)
+        
+        for title, files in tracks.items():
+            results = {}
+            for name, path in files.items():
+                stats = get_stats(path)
+                if stats:
+                    results[name] = stats
+            print_table(title, results)
 
 if __name__ == "__main__":
     main()
