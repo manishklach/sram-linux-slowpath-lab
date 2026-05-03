@@ -53,18 +53,16 @@ For more details, see:
 - [Existing io_uring Fast Paths and Remaining Gaps](docs/kernel-patches/existing-io_uring-fastpaths.md)
 - [Maintainer FAQ](docs/maintainer-faq.md)
 
-## Validation of Existing Fast Paths
+## Benchmark Tracks
 
-Before proposing new kernel-level fast paths, this project empirically validates the effectiveness of existing `io_uring` mechanisms:
-- **SQPOLL**: To eliminate submission-side syscall overhead.
-- **REGISTER_BUFFERS**: To minimize memory pinning and mapping costs.
-- **Fixed Files**: To reduce fd lookup overhead.
-- **IOPOLL**: For supported completion polling.
-
-We measure the **residual latency**—specifically the time spent in the kernel-to-userspace transition (`Complete → Wakeup → Sched-in`)—that remains after these features are enabled.
+To provide a comprehensive evaluation, the validation harness supports two distinct tracks:
+- **NOP mode**: Measures raw `io_uring` ring overhead with minimal operations.
+- **SRAM20 mode**: Implements a deterministic AI inference model using a 20µs busy-wait to simulate predictable hardware execution.
 
 Results and attribution breakdown:
 - [Existing Fast Path Validation Results](docs/kernel-fastpath-gap-results.md)
+
+## What This Is / Is Not
 
 ## What This Is / Is Not
 

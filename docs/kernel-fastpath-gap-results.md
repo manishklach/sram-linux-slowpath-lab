@@ -4,9 +4,14 @@
 - **Environment**: WSL (Synthetic) / Native Linux (Baseline)
 - **CPU Pinning**: Requests pinned to core 0.
 - **Kernel Version**: 6.19.7 (Experimental with attribution tracepoints).
-- **Workload**: `IORING_OP_NOP` with deterministic hardware simulation.
+- **Workloads**: 
+  - **NOP**: Raw `io_uring` overhead measurement.
+  - **SRAM20**: Deterministic 20µs busy-wait compute model.
 
-## Results Summary
+## Track A: Pure io_uring NOP
+This track measures the raw ring overhead without any application-level compute.
+- **Goal**: Establish the "floor" of `io_uring` latency on the current host.
+- **Note**: WSL results in this mode are useful only as a harness sanity check; hypervisor-induced jitter is highly visible at the sub-microsecond scale.
 
 | Mode | p50 (µs) | p99 (µs) | p99.9 (µs) | Status |
 |------|----------|----------|------------|--------|
@@ -15,32 +20,25 @@
 | SQPOLL + Fixed Buffers | - | - | - | Pending |
 | SQPOLL + Buffers + Files | - | - | - | Pending |
 
-## Latency Attribution Breakdown
+## Track B: SRAM-style deterministic inference
+This track includes a deterministic ~20µs busy-wait per request, simulating a zero-variance SRAM-based hardware accelerator.
+- **Goal**: Better matches the project's core thesis. 
+- **Goal**: Used to evaluate whether host overhead (completion delivery and scheduling) remains visible relative to predictable compute.
 
-Once benchmarks are executed, this section will provide the microsecond breakdown of the following segments:
-
-### 1. Submit → Issue (Control Plane Setup)
-- **Expectation**: `SQPOLL` should eliminate the syscall overhead.
-- **Goal**: Measure the residual cost of `io_uring` internal request allocation and setup.
-
-### 2. Issue → Complete (Hardware/Compute)
-- **Expectation**: Deterministic in this simulated environment.
-- **Goal**: Verify that compute jitter is not the source of tail latency.
-
-### 3. Complete → Wakeup (Kernel Pipeline)
-- **Expectation**: Potential bottleneck due to `io_cqring_wake` and waitqueue management.
-- **Goal**: Identify if the kernel spends significant time before issuing the wakeup signal.
-
-### 4. Wakeup → Sched-in (Host Scheduling)
-- **Expectation**: Major contributor to tail latency (p99+).
-- **Goal**: Quantify the cost of the task being ready but not yet running.
+| Mode | p50 (µs) | p99 (µs) | p99.9 (µs) | Status |
+|------|----------|----------|------------|--------|
+| Baseline | - | - | - | Pending |
+| SQPOLL | - | - | - | Pending |
+| SQPOLL + Fixed Buffers | - | - | - | Pending |
+| SQPOLL + Buffers + Files | - | - | - | Pending |
 
 ## Interpretation of Gaps
 
 - **Does SQPOLL eliminate submission overhead?**: (To be answered after validation)
 - **Do registered buffers reduce memory overhead?**: (To be answered after validation)
-- **Does completion → wakeup still dominate?**: **THIS IS THE KEY QUESTION.** If the delay between the kernel completing a request and the task becoming active remains >10µs, it justifies the exploration of bounded CQ polling or wakeup avoidance.
+- **Does completion → wakeup still dominate?**: **THIS IS THE KEY QUESTION.**
+- **Interpretation Principle**: In WSL NOP-scale runs, SQPOLL may add overhead for this minimal workload due to hypervisor context switching; native Linux attribution is required before drawing final conclusions.
 
 ## Conclusion
 
-Even after applying all existing `io_uring` fast paths, we hypothesize that the completion and scheduling pipeline remains a significant contributor to tail latency in microsecond-scale inference workloads. This empirical baseline will determine the path forward for Phase 7/8.
+Even after applying all existing `io_uring` fast paths, we evaluate whether the completion and scheduling pipeline remains a significant contributor to tail latency in microsecond-scale inference workloads. This empirical baseline will determine the path forward for Phase 7/8.

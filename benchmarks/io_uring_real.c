@@ -11,10 +11,12 @@
 #include <time.h>
 #include <stdbool.h>
 #include <errno.h>
+#include <signal.h>
+#include <getopt.h>
 
 /*
  * Advanced io_uring benchmark for validating existing fast paths.
- * Modes: Baseline, SQPOLL, REGISTER_BUFFERS, IOPOLL, Fixed Files.
+ * Supports NOP (raw overhead) and SRAM20 (deterministic inference) tracks.
  */
 
 #ifndef IORING_SETUP_LOW_LATENCY
@@ -28,6 +30,11 @@
 #ifndef IORING_REGISTER_FILES
 #define IORING_REGISTER_FILES 2
 #endif
+
+enum workload_type {
+    WORKLOAD_NOP,
+    WORKLOAD_SRAM20
+};
 
 struct app_sq_ring {
     unsigned *head;
@@ -76,6 +83,13 @@ static inline uint64_t now_ns(void) {
     return ((uint64_t) ts.tv_sec * 1000000000ull) + (uint64_t) ts.tv_nsec;
 }
 
+static void busy_wait_ns(uint64_t ns) {
+    uint64_t start = now_ns();
+    while (now_ns() - start < ns) {
+        __builtin_ia32_pause();
+    }
+}
+
 int setup_context(struct submitter *s, unsigned entries, struct io_uring_params *p) {
     int ret = io_uring_setup(entries, p);
     if (ret < 0) {
@@ -117,7 +131,6 @@ static char *mode_to_str(int mode) {
         case 'A': return "BASELINE";
         case 'B': return "SQPOLL";
         case 'C': return "SQPOLL + REGISTER_BUFFERS";
-        case 'D': return "IOPOLL";
         case 'E': return "SQPOLL + REGISTER_BUFFERS + FIXED_FILES";
         default: return "UNKNOWN";
     }
@@ -126,9 +139,26 @@ static char *mode_to_str(int mode) {
 int main(int argc, char *argv[]) {
     int iterations = 1000;
     char mode = 'A';
-    
-    if (argc > 1) mode = argv[1][0];
-    if (argc > 2) iterations = atoi(argv[2]);
+    enum workload_type workload = WORKLOAD_NOP;
+
+    static struct option long_options[] = {
+        {"mode", required_argument, 0, 'm'},
+        {"iters", required_argument, 0, 'i'},
+        {"workload", required_argument, 0, 'w'},
+        {0, 0, 0, 0}
+    };
+
+    int opt;
+    while ((opt = getopt_long(argc, argv, "m:i:w:", long_options, NULL)) != -1) {
+        switch (opt) {
+            case 'm': mode = optarg[0]; break;
+            case 'i': iterations = atoi(optarg); break;
+            case 'w':
+                if (strcmp(optarg, "nop") == 0) workload = WORKLOAD_NOP;
+                else if (strcmp(optarg, "sram20") == 0) workload = WORKLOAD_SRAM20;
+                break;
+        }
+    }
 
     struct io_uring_params p = { };
     p.flags |= IORING_SETUP_LOW_LATENCY;
@@ -136,12 +166,17 @@ int main(int argc, char *argv[]) {
     if (mode == 'B' || mode == 'C' || mode == 'E') {
         p.flags |= IORING_SETUP_SQPOLL;
     }
-    if (mode == 'D') {
-        p.flags |= IORING_SETUP_IOPOLL;
-    }
 
     struct submitter s;
-    if (setup_context(&s, 32, &p)) return 1;
+    if (setup_context(&s, 32, &p)) {
+        if (errno == EINVAL && (p.flags & IORING_SETUP_LOW_LATENCY)) {
+            fprintf(stderr, "IORING_SETUP_LOW_LATENCY not supported, falling back to NORMAL...\n");
+            p.flags &= ~IORING_SETUP_LOW_LATENCY;
+            if (setup_context(&s, 32, &p)) return 1;
+        } else {
+            return 1;
+        }
+    }
 
     void *buf = NULL;
     if (mode == 'C' || mode == 'E') {
@@ -150,7 +185,6 @@ int main(int argc, char *argv[]) {
         struct iovec iov = { .iov_base = buf, .iov_len = 4096 };
         if (io_uring_register(s.ring_fd, IORING_REGISTER_BUFFERS, &iov, 1) < 0) {
             perror("io_uring_register(BUFFERS)");
-            // Continue anyway, but expect non-fixed path
         }
     }
 
@@ -161,7 +195,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    fprintf(stderr, "Starting %d iterations in mode %c (%s)...\n", iterations, mode, mode_to_str(mode));
+    fprintf(stderr, "Starting %d iterations | Mode: %s | Workload: %s\n", 
+            iterations, mode_to_str(mode), workload == WORKLOAD_NOP ? "nop" : "sram20");
 
     for (int i = 1; i <= iterations; i++) {
         unsigned tail = *s.sq_ring.tail;
@@ -176,12 +211,11 @@ int main(int argc, char *argv[]) {
             sqe->addr = (uintptr_t)buf;
             sqe->len = 4096;
             sqe->buf_index = 0;
-            /* Even for NOP, setting these can trigger the fixed-buffer code paths in the kernel */
         }
         
         if (mode == 'E') {
             sqe->flags |= IOSQE_FIXED_FILE;
-            sqe->fd = 0; // index 0 in registered files
+            sqe->fd = 0;
         } else {
             sqe->fd = -1;
         }
@@ -191,13 +225,10 @@ int main(int argc, char *argv[]) {
 
         uint64_t t_start = now_ns();
         
-        /* 
-         * For SQPOLL, we don't necessarily need to call enter to submit,
-         * but we need it to wait for completions if we want to block.
-         */
         int enter_flags = IORING_ENTER_GETEVENTS;
-        if (!(p.flags & IORING_SETUP_SQPOLL)) {
-            // Non-SQPOLL needs explicit submission if we don't use GETEVENTS for it
+        if (p.flags & IORING_SETUP_SQPOLL) {
+            if (*s.sq_ring.flags & IORING_SQ_NEED_WAKEUP)
+                enter_flags |= IORING_ENTER_SQ_WAKEUP;
         }
 
         int ret = io_uring_enter(s.ring_fd, 1, 1, enter_flags, NULL);
@@ -206,13 +237,18 @@ int main(int argc, char *argv[]) {
             break;
         }
         
-        uint64_t t_end = now_ns();
+        uint64_t t_after_submit = now_ns();
+
+        /* SRAM20 deterministic compute model */
+        if (workload == WORKLOAD_SRAM20) {
+            busy_wait_ns(20000); // 20us
+        }
+        uint64_t t_after_device = now_ns();
 
         /* Consume completion */
         unsigned head = *s.cq_ring.head;
         unsigned tail_val;
         while (head == (tail_val = __atomic_load_n(s.cq_ring.tail, __ATOMIC_ACQUIRE))) {
-            // Busy wait if enter returned early (can happen with SQPOLL/IOPOLL)
             if (now_ns() - t_start > 1000000000ull) {
                 fprintf(stderr, "Timeout waiting for completion\n");
                 break;
@@ -222,9 +258,19 @@ int main(int argc, char *argv[]) {
 
         struct io_uring_cqe *cqe = &s.cq_ring.cqes[head & *s.cq_ring.ring_mask];
         __atomic_store_n(s.cq_ring.head, head + 1, __ATOMIC_RELEASE);
+        
+        uint64_t t_end = now_ns();
 
-        printf("{\"iter\":%d,\"mode\":\"%c\",\"request_id\":%lu,\"total_ns\":%lu}\n",
-               i, mode, (unsigned long)cqe->user_data, (unsigned long)(t_end - t_start));
+        if (workload == WORKLOAD_NOP) {
+            printf("{\"iter\":%d,\"mode\":\"%c\",\"workload\":\"nop\",\"total_ns\":%lu}\n",
+                   i, mode, (unsigned long)(t_end - t_start));
+        } else {
+            printf("{\"iter\":%d,\"mode\":\"%c\",\"workload\":\"sram20\",\"submit_ns\":%lu,\"device_ns\":%lu,\"complete_ns\":%lu,\"total_ns\":%lu}\n",
+                   i, mode, (unsigned long)(t_after_submit - t_start), 
+                   (unsigned long)(t_after_device - t_after_submit),
+                   (unsigned long)(t_end - t_after_device),
+                   (unsigned long)(t_end - t_start));
+        }
     }
 
     close(s.ring_fd);

@@ -16,7 +16,7 @@ def process_data(file_obj):
         print("No valid JSON records found.")
         return
 
-    keys = ["submit_ns", "device_ns", "completion_ns", "total_ns"]
+    keys = ["submit_ns", "device_ns", "complete_ns", "total_ns"]
     
     print(f"{'Metric':<15} | {'Min':<8} | {'p50':<8} | {'p95':<8} | {'p99':<8} | {'p999':<8} | {'Max':<8} | {'Avg':<8}")
     print("-" * 85)
