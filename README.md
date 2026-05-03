@@ -1,5 +1,7 @@
 # SRAM Inference Kernel Fastpath
 
+Experimental Linux kernel fast-path research for SRAM-style AI inference servers, focused on io_uring submission latency, batching, registered buffers, tracing, and native attribution.
+
 ## TL;DR
 In deterministic AI inference (~20µs execution), Linux host overhead can match or exceed device 
 latency, effectively doubling end-to-end request time.
@@ -22,9 +24,7 @@ longer the dominant source of latency.
   completion delivery pipelines contribute measurable microseconds.
 - **Tail latency (p99/p999) is driven by host-side effects**: Scheduling and interrupt 
   handling costs dominate the "tail" of the latency distribution.
-- **Existing io_uring fast paths reduce but do not eliminate this gap**: Features like 
-  SQPOLL and registered buffers optimize portions of the path but leave completion-side 
-  bottlenecks unaddressed.
+- **Existing io_uring fast paths reduce but do not eliminate this gap**: Existing io_uring fast paths reduce important parts of the path, while this repo measures what residual latency remains.
 
 ## Benchmark Tracks
 
@@ -69,7 +69,7 @@ See [Batch Sweep Results](docs/batch-sweep-results.md) for the optimization data
 
 ## Performance Visualization
 
-Embed images:
+The following plots summarize the batch sweep experiments:
 
 ![Batch Latency](docs/assets/batch_latency.png)
 ![Submission Cost](docs/assets/submission_cost.png)
@@ -92,7 +92,7 @@ Research has pivoted from completion-side polling to optimizing the submission p
 
 ## Preliminary Native Attribution Results
 
-Initial validation on simulated native hardware (WSL) indicates:
+Initial WSL-based validation indicates:
 - **p99 Dominance**: Latency is currently dominated by **Submission Path overhead** and **Hypervisor Jitter**.
 - **Completion Path**: Residual host-side completion latency is sub-microsecond in synchronous modes.
 - **Decision**: Experimental CQ polling is **NOT yet justified** on native hardware. Further bare-metal measurement is required to isolate kernel-specific completion bottlenecks.
