@@ -67,6 +67,14 @@ There exists a batch size range (8–16) that minimizes per-request overhead wit
 
 See [Batch Sweep Results](docs/batch-sweep-results.md) for the optimization data.
 
+## Performance Visualization
+
+Embed images:
+
+![Batch Latency](docs/assets/batch_latency.png)
+![Submission Cost](docs/assets/submission_cost.png)
+![Tail Spread](docs/assets/tail_spread.png)
+
 ## Adaptive Batching Strategy
 
 Real-world inference systems must balance throughput and latency in the presence of host-side jitter. Our adaptive batching experiment demonstrates that a simple latency-based heuristic can outperform static strategies, particularly in reducing **p99 tail latency**.
