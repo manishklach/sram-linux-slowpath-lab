@@ -28,14 +28,18 @@ This roadmap tracks the evolution from latency attribution to kernel-level optim
 - **Goal**: Instrument fixed-buffer paths and task-wakeup delays.
 - **Status**: Complete.
 
-## Phase 7: Bounded CQ polling
-- **Goal**: Optimize `io_cqring_wait` for deterministic hardware.
+## Phase 7: Existing io_uring fastpath gap analysis and wakeup attribution
+- **Goal**: Analyze the residual latency when SQPOLL, IOPOLL, and Registered Buffers are used.
 - **Status**: Planned.
 
-## Phase 8: Native Linux validation
+## Phase 8: Optional bounded wakeup-avoidance experiment, only if measurements justify it
+- **Goal**: Prototype experimental wakeup avoidance policies if attribution data confirms significant residual overhead.
+- **Status**: Planned.
+
+## Phase 9: Native Linux validation
 - **Goal**: Benchmark on bare-metal hardware to eliminate hypervisor jitter.
 - **Status**: In-progress.
 
-## Phase 9: Vendor/hardware integration
+## Phase 10: Vendor/hardware integration
 - **Goal**: Partner with hardware vendors to validate against real SRAM accelerators.
 - **Status**: Planned.

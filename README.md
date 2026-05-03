@@ -45,6 +45,14 @@ This repo prototypes the kernel-level fast paths required for low-latency AI inf
 
 **These determine whether accelerator improvements translate into real-world latency gains.**
 
+## Relationship to Existing io_uring Fast Paths
+
+This project does not ignore existing `io_uring` mechanisms such as `SQPOLL`, `IOPOLL`, registered buffers, and fixed files. It builds on them. The open research question is the residual completion, wakeup, and scheduler latency that remains after those mechanisms are used.
+
+For more details, see:
+- [Existing io_uring Fast Paths and Remaining Gaps](docs/kernel-patches/existing-io_uring-fastpaths.md)
+- [Maintainer FAQ](docs/maintainer-faq.md)
+
 ## What This Is / Is Not
 
 **This is:**
