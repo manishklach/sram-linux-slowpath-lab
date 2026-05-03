@@ -112,4 +112,4 @@ See [Native Latency Breakdown](docs/native-latency-breakdown.md) for detailed at
 - Performance theater using non-deterministic hardware.
 
 ## License
-MIT
+GPL v2
