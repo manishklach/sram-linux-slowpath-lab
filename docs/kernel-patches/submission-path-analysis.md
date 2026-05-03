@@ -1,51 +1,62 @@
 # Submission Path Latency Analysis
 
-## Overview
-Based on recent high-fidelity measurements (see [Native Latency Breakdown](../native-latency-breakdown.md)), the primary bottleneck in deterministic AI inference workloads is the **Submission Path (`submit → issue`)**, rather than the completion delivery path. This document analyzes the components of this path and identifies optimization opportunities.
+## Why this document exists
+The project originally considered completion-side wakeup avoidance (e.g., `IORING_SETUP_CQ_POLL`). However, current attribution measurements show that completion-to-userspace residual latency is sub-microsecond in our deterministic benchmarks. The next justified research direction is a deep-dive into the submission-side path, which shows a much stronger latency signal.
 
-## Components of the submit → issue path
-1.  **Userspace Submission**: Ringing the SQ doorbell (tail update + release barrier).
-2.  **io_uring_enter syscall**: The cost of the transition from userspace to kernel space.
-3.  **SQ Ring Processing**: Kernel-side consumption of SQ entries.
-4.  **Request Allocation**: Creation and initialization of the `struct io_kiocb` internal state.
-5.  **Issue Dispatch**: Handing the request off to the device-specific or internal processing logic.
+## Current finding
+- **Deterministic SRAM-style compute**: Fixed at ~20µs.
+- **submit→issue p99**: Significant signal (~7µs in synthetic environments).
+- **Residual completion path**: Sub-microsecond (~30–90ns) in current synchronous synthetic setups.
+- **CQ polling justification**: Currently **NOT justified** by the available data.
 
-## Optimization Opportunities
+## What submit→issue includes
+The path from a userspace submission to the kernel issuing the request involves:
+- **Userspace writing SQEs**: Posting entries to the ring and updating the tail.
+- **Memory ordering**: Ring visibility and atomic barrier overhead.
+- **io_uring_enter syscall**: The context switch cost if `SQPOLL` is not used.
+- **SQ ring processing**: Kernel-side consumption and validation of SQEs.
+- **Request preparation**: Mapping userspace data into internal kernel structures.
+- **Request allocation / caching**: Allocation of `struct io_kiocb` and related state.
+- **Issue dispatch**: Handing the request off to the device driver or internal worker.
 
-### Syscall Overhead
-The `io_uring_enter` system call remains a significant fixed cost (~0.5–1µs). While standard `io_uring` uses this to signal work, in microsecond-scale inference, this cost is highly visible.
-- **SQPOLL Benefit**: Moving to `IORING_SETUP_SQPOLL` can eliminate this syscall entirely, provided the kernel thread is active.
+## Why submission matters for SRAM-style inference
+When hardware execution is tens of microseconds and highly predictable (deterministic), even a few microseconds of submission overhead becomes visible at p99. This overhead represents a fixed "tax" on every inference request, regardless of model size.
 
-### SQPOLL Behavior & Scheduling
-The SQPOLL kernel thread itself is a source of latency:
-- **Scheduling Sensitivity**: If the SQPOLL thread is de-scheduled, the submission "hangs" until it is context-switched back in.
-- **Cache Locality**: Accessing the SQ ring from a kernel thread running on a different CPU core can lead to cacheline bouncing and cross-core synchronization delays.
+## Existing mechanisms
 
-### Ring Access Patterns
-- **Cacheline Bouncing**: Frequent updates to the SQ tail/head pointers can cause cache contention between the user process and the SQPOLL thread.
-- **Memory Ordering**: Atomic barriers required for ring synchronization add micro-delays that aggregate over millions of operations.
+### SQPOLL
+- **What it does**: Uses a kernel thread to poll the SQ ring.
+- **Benefits**: Reduces submission-side syscall overhead.
+- **Challenges**: Sensitive to thread scheduling and CPU placement; can lead to cacheline bouncing.
 
-### Request Allocation
-- **Slab/Cache Effects**: Allocation of `io_kiocb` structures is heavily optimized in the kernel, but cold caches or slab fragmentation can still drive p99 tail latency.
+### Registered buffers
+- **What it does**: Pre-maps memory regions into the kernel.
+- **Benefits**: Reduces memory setup and page pinning overhead per request.
 
-## Why submission path dominates in deterministic workloads
-In standard asynchronous I/O (e.g., storage), the device latency (milliseconds) dwarfs the submission overhead. However, when compute is fixed and extremely low (~20µs), the submission latency (~5–10µs at the tail) becomes a first-order contributor, accounting for 25% or more of the total request lifecycle.
+### Fixed files
+- **What it does**: Registers file descriptors with the ring.
+- **Benefits**: Reduces fd lookup and reference counting overhead.
 
-## Proposed Experiments (Attribution only)
+## Hypotheses to test next
+1. **H1**: `SQPOLL` only helps significantly when the polling thread is scheduled predictably (low jitter).
+2. **H2**: CPU placement (NUMA distance, sibling threads) between the userspace submitter and the `SQPOLL` thread affects p99 submission latency.
+3. **H3**: Batching multiple requests reduces the per-request `submit→issue` overhead by amortizing syscall and allocation costs.
+4. **H4**: Fixed buffers and files reduce setup overhead but do not eliminate the core ring-processing latency.
 
-### Experiment 1: Tight Affinity
-Pin both the userspace process and the SQPOLL kernel thread to the same physical core (sibling threads). This tests whether shared L1/L2 caches reduce submission-to-issue latency.
+## Experiments
+- **Experiment 1**: Baseline vs `SQPOLL` on native Linux to isolate syscall impact.
+- **Experiment 2**: `SQPOLL` with submitter pinned to the **same CPU** vs. a **different CPU** core.
+- **Experiment 3**: Batch size sweep (1, 2, 4, 8, 16) to measure amortization.
+- **Experiment 4**: Registered buffers + fixed files vs. baseline on native hardware.
+- **Experiment 5**: Native `bpftrace` attribution of the `submit→issue` tail latency.
 
-### Experiment 2: Sycall-Free Operation
-Enforce a 100% SQPOLL-only submission path. Measure the latency delta when the user process never issues `io_uring_enter` (by using a large `sq_thread_idle` value).
+## Future kernel directions
+Possible directions (subject to measurement results):
+- **Better SQPOLL affinity controls**: Providing userspace more influence over kernel thread placement.
+- **Submission-side tracepoints**: Exporting more fine-grained metrics for `io_kiocb` lifecycle.
+- **Request allocation/caching analysis**: Optimizing the slab cache behavior for high-frequency low-latency loops.
+- **Cache-local ring processing**: Designing ring structures that minimize cross-core cache invalidation.
+- **Batching-aware latency mode**: A mode that optimizes for per-batch rather than per-request delivery.
 
-### Experiment 3: Dynamic Batching
-Measure whether batching 4-8 inference requests per submission reduces the per-request "tax" of the submission path.
-
-## Potential Kernel Directions (Future)
-- **Reduce io_uring_enter overhead**: Explore ways to minimize the instruction path within the entry-point.
-- **SQPOLL Scheduling Stability**: Investigate real-time scheduling classes or dedicated task isolation for SQPOLL threads in low-latency regimes.
-- **Cache-Local Submission Rings**: Explore hardware-aligned ring layouts that minimize cross-core cache invalidation.
-
-## Conclusion
-The data indicates that the path from userspace "posting" to the kernel "issuing" is the current bottleneck. Future research will focus on stabilizing and accelerating this submission plane to match the performance of deterministic SRAM-based accelerators.
+## Why not CQ polling yet
+CQ polling targets completion and wakeup latency. Current attribution data does not show that path as dominant in deterministic workloads. As a result, CQ polling remains a future experiment only if native Linux attribution eventually justifies it.

@@ -61,7 +61,8 @@ Recent native-like validation data shows that for deterministic workloads, **Sub
 
 Research has pivoted from completion-side polling to optimizing the submission plane to match the performance of microsecond-scale hardware.
 
-See [Submission Path Analysis](docs/kernel-patches/submission-path-analysis.md) for the latest research direction.
+- [Submission Path Analysis](docs/kernel-patches/submission-path-analysis.md)
+- [Submission Experiment Plan](docs/submission-experiment-plan.md)
 
 ## Preliminary Native Attribution Results
 

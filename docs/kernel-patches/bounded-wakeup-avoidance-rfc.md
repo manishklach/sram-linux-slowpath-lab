@@ -1,5 +1,13 @@
 # Bounded Completion Wakeup-Avoidance RFC
 
+**Status**: Deferred.
+
+**Reason**:
+Current attribution measurements do not show the completion/wakeup path as the dominant 
+bottleneck in deterministic AI workloads. This RFC remains documented for future research 
+but should not proceed until native Linux data shows that `complete→wakeup` or `wakeup→sched` 
+significantly dominates p99 latency.
+
 ## Motivation
 Even when advanced `io_uring` features like `SQPOLL`, `IOPOLL`, registered buffers, and fixed files are utilized, deterministic AI inference (targeting ~20µs execution) still faces microsecond-scale tail latency. Analysis suggests that a significant portion of this residual latency is spent in the transition from kernel completion to userspace task execution:
 `completion posted → wakeup requested → task scheduled`.
