@@ -6,24 +6,114 @@
 <title>Why Batching Beats Kernel Optimizations in Microsecond AI Inference</title>
 <meta name="description" content="Deep dive into SRAM-style AI inference latency, kernel overhead, and why batching dominates in the microsecond regime.">
 <style>
+:root {
+  --bg-color: #0b0c10;
+  --text-color: #e6edf3;
+  --accent-color: #58a6ff;
+  --header-bg: rgba(13, 17, 23, 0.8);
+  --card-bg: #161b22;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: #0b0c10;
-  color: #e6edf3;
-  max-width: 900px;
-  margin: auto;
-  padding: 40px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  margin: 0;
+  padding: 0;
   line-height: 1.75;
 }
-h1, h2, h3 { color: #58a6ff; }
-code { background: #161b22; padding: 3px 6px; border-radius: 4px; }
-pre { background: #161b22; padding: 15px; border-radius: 8px; overflow-x: auto; }
-blockquote { border-left: 4px solid #58a6ff; padding-left: 15px; color: #9da7b3; }
-hr { margin: 40px 0; }
+
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 100px 20px 60px;
+}
+
+header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: var(--header-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.header-content {
+  width: 100%;
+  max-width: 800px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 20px;
+}
+
+.logo {
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: var(--accent-color);
+  text-decoration: none;
+}
+
+nav a {
+  color: var(--text-color);
+  text-decoration: none;
+  margin-left: 20px;
+  font-size: 0.9rem;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+nav a:hover {
+  opacity: 1;
+  color: var(--accent-color);
+}
+
+footer {
+  margin-top: 80px;
+  padding: 40px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+  font-size: 0.85rem;
+  color: #8b949e;
+}
+
+h1, h2, h3 { color: var(--accent-color); margin-top: 1.5em; }
+code { background: var(--card-bg); padding: 3px 6px; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace; font-size: 0.9em; }
+pre { background: var(--card-bg); padding: 20px; border-radius: 12px; overflow-x: auto; border: 1px solid rgba(255, 255, 255, 0.05); }
+blockquote { border-left: 4px solid var(--accent-color); padding: 10px 20px; margin: 20px 0; background: rgba(88, 166, 255, 0.05); border-radius: 0 8px 8px 0; color: #9da7b3; font-style: italic; }
+hr { border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 40px 0; }
+table { width: 100%; border-collapse: collapse; margin: 20px 0; background: var(--card-bg); border-radius: 8px; overflow: hidden; }
+th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+th { background: rgba(255, 255, 255, 0.05); color: var(--accent-color); }
+
+@media (max-width: 600px) {
+  .header-content { flex-direction: column; height: auto; padding: 10px; }
+  header { height: auto; }
+  .container { padding-top: 120px; }
+}
 </style>
 </head>
 
 <body>
+
+<header>
+  <div class="header-content">
+    <a href="#" class="logo">SRAM Inference Lab</a>
+    <nav>
+      <a href="https://github.com/manishklach/sram-inference-kernel-fastpath">GitHub Repo</a>
+      <a href="https://github.com/manishklach/sram-inference-kernel-fastpath/tree/master/docs">Documentation</a>
+    </nav>
+  </div>
+</header>
+
+<div class="container">
 
 <h1>Why Batching Beats Kernel Optimizations in Microsecond AI Inference</h1>
 
@@ -31,7 +121,7 @@ hr { margin: 40px 0; }
 When AI inference becomes deterministic (~20µs), Linux host overhead becomes visible.  
 The biggest performance lever is not kernel optimization—it is batching.</p>
 
-<blockquote>
+<blockquote class="pull-quote">
 Once inference becomes deterministic, the Linux control plane—not the model—dominates latency.
 </blockquote>
 
@@ -74,9 +164,10 @@ Once inference becomes deterministic, the Linux control plane—not the model—
 <ul>
 <li>Completion latency is sub-microsecond</li>
 <li>Not a dominant contributor</li>
+<li>CQ polling is NOT yet justified</li>
 </ul>
 
-<p><strong>Conclusion:</strong> Completion is not the bottleneck.</p>
+<p><strong>Conclusion:</strong> Completion is not the primary bottleneck.</p>
 
 <hr>
 
@@ -218,7 +309,7 @@ System design dominates kernel micro-optimization in the microsecond regime.
 <ul>
 <li>Adaptive batching</li>
 <li>Native Linux validation</li>
-<li>Submission-path kernel tuning (if needed)</li>
+<li>Submission-path kernel tuning</li>
 </ul>
 
 <hr>
@@ -229,6 +320,13 @@ System design dominates kernel micro-optimization in the microsecond regime.
 SRAM-style inference doesn’t remove latency—it reveals it.  
 And batching is the most powerful lever we have.
 </blockquote>
+
+</div>
+
+<footer>
+  <p>&copy; 2026 SRAM Inference Research. All results obtained on synthetic micro-benchmarks.</p>
+  <p>Part of the <a href="https://github.com/manishklach/sram-inference-kernel-fastpath" style="color: var(--accent-color); text-decoration: none;">SRAM Inference Kernel Fastpath</a> project.</p>
+</footer>
 
 </body>
 </html>
