@@ -55,6 +55,15 @@ All definitive research conclusions require native Linux validation.
 - [Maintainer FAQ](docs/maintainer-faq.md)
 - [Project Roadmap](docs/roadmap.md)
 
+## Preliminary Native Attribution Results
+
+Initial validation on simulated native hardware (WSL) indicates:
+- **p99 Dominance**: Latency is currently dominated by **Submission Path overhead** and **Hypervisor Jitter**.
+- **Completion Path**: Residual host-side completion latency is sub-microsecond in synchronous modes.
+- **Decision**: Experimental CQ polling is **NOT yet justified** on native hardware. Further bare-metal measurement is required to isolate kernel-specific completion bottlenecks.
+
+See [Native Latency Breakdown](docs/native-latency-breakdown.md) for detailed attribution data.
+
 ## What This Is / Is Not
 
 **This is:**
