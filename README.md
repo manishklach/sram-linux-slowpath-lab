@@ -13,6 +13,7 @@ This repo isolates that overhead and prototypes the kernel fast paths required t
 
 > Once inference becomes deterministic, the Linux control plane—not the model—dominates latency.
 
+
 This project targets the **post-compute bottleneck regime**, where hardware execution is no 
 longer the dominant source of latency.
 
