@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Why Batching Beats Kernel Optimizations in Microsecond AI Inference</title>
+<meta name="description" content="Deep dive into SRAM-style AI inference latency, kernel overhead, and why batching dominates in the microsecond regime.">
+<style>
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #0b0c10;
+  color: #e6edf3;
+  max-width: 900px;
+  margin: auto;
+  padding: 40px;
+  line-height: 1.75;
+}
+h1, h2, h3 { color: #58a6ff; }
+code { background: #161b22; padding: 3px 6px; border-radius: 4px; }
+pre { background: #161b22; padding: 15px; border-radius: 8px; overflow-x: auto; }
+blockquote { border-left: 4px solid #58a6ff; padding-left: 15px; color: #9da7b3; }
+hr { margin: 40px 0; }
+</style>
+</head>
+
+<body>
+
+<h1>Why Batching Beats Kernel Optimizations in Microsecond AI Inference</h1>
+
+<p><strong>TL;DR</strong><br>
+When AI inference becomes deterministic (~20µs), Linux host overhead becomes visible.  
+The biggest performance lever is not kernel optimization—it is batching.</p>
+
+<blockquote>
+Once inference becomes deterministic, the Linux control plane—not the model—dominates latency.
+</blockquote>
+
+<hr>
+
+<h2>1. The Shift: From Compute-Bound to Control-Plane Bound</h2>
+
+<p>Traditional performance thinking assumes compute dominates. But with SRAM-style inference:</p>
+
+<ul>
+<li>Execution becomes fast (~20µs)</li>
+<li>Variance collapses</li>
+<li>Latency becomes predictable</li>
+</ul>
+
+<p>This pushes systems into a new regime:</p>
+
+<pre>Total Latency = Compute + Host Overhead</pre>
+
+<p>When compute stabilizes, the host becomes the bottleneck.</p>
+
+<hr>
+
+<h2>2. Initial Hypothesis: The Completion Path</h2>
+
+<p>The obvious suspect:</p>
+
+<pre>IRQ → softirq → wakeup → scheduler → userspace</pre>
+
+<p>This suggests optimizing:</p>
+
+<ul>
+<li>Interrupt handling</li>
+<li>Wakeups</li>
+<li>Polling (CQ polling)</li>
+</ul>
+
+<p>But measurement showed:</p>
+
+<ul>
+<li>Completion latency is sub-microsecond</li>
+<li>Not a dominant contributor</li>
+</ul>
+
+<p><strong>Conclusion:</strong> Completion is not the bottleneck.</p>
+
+<hr>
+
+<h2>3. The Real Bottleneck: Submission</h2>
+
+<p>Breaking the pipeline:</p>
+
+<pre>
+userspace → submit → issue → device → complete → userspace
+</pre>
+
+<p>Measured result:</p>
+
+<ul>
+<li><code>submit → issue</code> ≈ 5–7µs p99</li>
+<li>Compute ≈ 20µs</li>
+</ul>
+
+<p>This means submission overhead is ~25–30% of total latency.</p>
+
+<hr>
+
+<h2>4. A Simple Cost Model</h2>
+
+<pre>
+Cost(N) = Fixed + (N × Per-request)
+Cost_per_request = (Fixed / N) + Per-request
+</pre>
+
+<p>Where:</p>
+
+<ul>
+<li><strong>Fixed</strong>: syscall, ring setup, scheduling</li>
+<li><strong>Per-request</strong>: minimal work per IO</li>
+</ul>
+
+<blockquote>
+If cost is mostly fixed, the only solution is amortization.
+</blockquote>
+
+<hr>
+
+<h2>5. Experiment: Batch Size Sweep</h2>
+
+<table>
+<tr><th>Batch</th><th>p50 (µs)</th><th>p99 (µs)</th><th>Cost/Req</th></tr>
+<tr><td>1</td><td>20.6</td><td>56.5</td><td>~470ns</td></tr>
+<tr><td>8</td><td>21.1</td><td>54.6</td><td>~120ns</td></tr>
+<tr><td>16</td><td>21.5</td><td>54.2</td><td>~87ns</td></tr>
+<tr><td>32</td><td>22.6</td><td>53.6</td><td>~74ns</td></tr>
+</table>
+
+<hr>
+
+<h2>6. Key Result</h2>
+
+<pre>
+Batch=1   → ~470ns per request
+Batch=16  → ~87ns per request
+</pre>
+
+<p>That’s a <strong>7× reduction</strong> in submission overhead.</p>
+
+<p>Critically:</p>
+
+<ul>
+<li>p99 latency remains stable</li>
+<li>Tail latency does not explode</li>
+</ul>
+
+<hr>
+
+<h2>7. Why Batching Works</h2>
+
+<p>Batching amortizes:</p>
+
+<ul>
+<li>Syscall overhead (<code>io_uring_enter</code>)</li>
+<li>Ring processing</li>
+<li>Cache synchronization</li>
+<li>Scheduler interaction</li>
+</ul>
+
+<p>Important nuance:</p>
+
+<blockquote>
+The kernel still processes each request individually, but fixed costs are paid once per batch.
+</blockquote>
+
+<hr>
+
+<h2>8. The Optimal Region</h2>
+
+<p>Batching has diminishing returns:</p>
+
+<ul>
+<li>Too small → high overhead</li>
+<li>Too large → increased latency</li>
+</ul>
+
+<p>Observed optimum:</p>
+
+<blockquote>Batch size ≈ 8–16</blockquote>
+
+<hr>
+
+<h2>9. System-Level Implication</h2>
+
+<pre>
+Wrong:
+"Optimize the kernel"
+
+Right:
+"Amortize system overhead"
+</pre>
+
+<p>This leads to a broader insight:</p>
+
+<blockquote>
+System design dominates kernel micro-optimization in the microsecond regime.
+</blockquote>
+
+<hr>
+
+<h2>10. What This Means for AI Systems</h2>
+
+<ul>
+<li>Batch aggressively but carefully</li>
+<li>Target latency-efficient batching window</li>
+<li>Optimize architecture before kernel</li>
+</ul>
+
+<p>Kernel work still matters—but only after batching is exploited.</p>
+
+<hr>
+
+<h2>11. Future Work</h2>
+
+<ul>
+<li>Adaptive batching</li>
+<li>Native Linux validation</li>
+<li>Submission-path kernel tuning (if needed)</li>
+</ul>
+
+<hr>
+
+<h2>Final Takeaway</h2>
+
+<blockquote>
+SRAM-style inference doesn’t remove latency—it reveals it.  
+And batching is the most powerful lever we have.
+</blockquote>
+
+</body>
+</html>
