@@ -55,6 +55,14 @@ All definitive research conclusions require native Linux validation.
 - [Maintainer FAQ](docs/maintainer-faq.md)
 - [Project Roadmap](docs/roadmap.md)
 
+## Submission Path Bottleneck
+
+Recent native-like validation data shows that for deterministic workloads, **Submission-side latency** (`submit → issue`) is the primary bottleneck. Even after applying existing `io_uring` fast paths, the cost of the system call transition and request dispatch remains a significant contributor to tail latency.
+
+Research has pivoted from completion-side polling to optimizing the submission plane to match the performance of microsecond-scale hardware.
+
+See [Submission Path Analysis](docs/kernel-patches/submission-path-analysis.md) for the latest research direction.
+
 ## Preliminary Native Attribution Results
 
 Initial validation on simulated native hardware (WSL) indicates:
