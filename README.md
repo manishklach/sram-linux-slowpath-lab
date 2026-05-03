@@ -67,6 +67,12 @@ There exists a batch size range (8–16) that minimizes per-request overhead wit
 
 See [Batch Sweep Results](docs/batch-sweep-results.md) for the optimization data.
 
+## Adaptive Batching Strategy
+
+Real-world inference systems must balance throughput and latency in the presence of host-side jitter. Our adaptive batching experiment demonstrates that a simple latency-based heuristic can outperform static strategies, particularly in reducing **p99 tail latency**.
+
+See [Adaptive Batching Results](docs/adaptive-batching-results.md) for the performance breakdown.
+
 ## Submission Path Bottleneck
 
 Recent native-like validation data shows that for deterministic workloads, **Submission-side latency** (`submit → issue`) is the primary bottleneck. Even after applying existing `io_uring` fast paths, the cost of the system call transition and request dispatch remains a significant contributor to tail latency.

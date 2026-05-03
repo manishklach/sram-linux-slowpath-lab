@@ -139,6 +139,7 @@ static char *mode_to_str(int mode) {
 int main(int argc, char *argv[]) {
     int iterations = 1000;
     int batch_size = 1;
+    int adaptive = 0;
     char mode = 'A';
     enum workload_type workload = WORKLOAD_NOP;
 
@@ -147,15 +148,17 @@ int main(int argc, char *argv[]) {
         {"iters", required_argument, 0, 'i'},
         {"workload", required_argument, 0, 'w'},
         {"batch", required_argument, 0, 'b'},
+        {"adaptive", no_argument, 0, 'a'},
         {0, 0, 0, 0}
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "m:i:w:b:", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "m:i:w:b:a", long_options, NULL)) != -1) {
         switch (opt) {
             case 'm': mode = optarg[0]; break;
             case 'i': iterations = atoi(optarg); break;
             case 'b': batch_size = atoi(optarg); break;
+            case 'a': adaptive = 1; break;
             case 'w':
                 if (strcmp(optarg, "nop") == 0) workload = WORKLOAD_NOP;
                 else if (strcmp(optarg, "sram20") == 0) workload = WORKLOAD_SRAM20;
@@ -201,17 +204,18 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "Starting %d iterations | Mode: %s | Workload: %s\n", 
             iterations, mode_to_str(mode), workload == WORKLOAD_NOP ? "nop" : "sram20");
 
+    int current_batch = batch_size;
     for (int i = 1; i <= iterations; i++) {
         uint64_t t_start = now_ns();
         
-        for (int b = 0; b < batch_size; b++) {
+        for (int b = 0; b < current_batch; b++) {
             unsigned tail = *s.sq_ring.tail;
             unsigned index = tail & *s.sq_ring.ring_mask;
             struct io_uring_sqe *sqe = &s.sqes[index];
 
             memset(sqe, 0, sizeof(*sqe));
             sqe->opcode = IORING_OP_NOP;
-            sqe->user_data = i * batch_size + b;
+            sqe->user_data = i * 100 + b;
 
             if (mode == 'C' || mode == 'E') {
                 sqe->addr = (uintptr_t)buf;
@@ -236,7 +240,7 @@ int main(int argc, char *argv[]) {
                 enter_flags |= IORING_ENTER_SQ_WAKEUP;
         }
 
-        int ret = io_uring_enter(s.ring_fd, batch_size, batch_size, enter_flags, NULL);
+        int ret = io_uring_enter(s.ring_fd, current_batch, current_batch, enter_flags, NULL);
         if (ret < 0 && errno != EBUSY) {
             perror("io_uring_enter");
             break;
@@ -251,7 +255,7 @@ int main(int argc, char *argv[]) {
         uint64_t t_after_device = now_ns();
 
         /* Consume all completions in batch */
-        for (int b = 0; b < batch_size; b++) {
+        for (int b = 0; b < current_batch; b++) {
             unsigned head = *s.cq_ring.head;
             unsigned tail_val;
             while (head == (tail_val = __atomic_load_n(s.cq_ring.tail, __ATOMIC_ACQUIRE))) {
@@ -265,16 +269,28 @@ int main(int argc, char *argv[]) {
         }
         
         uint64_t t_end = now_ns();
+        uint64_t total_ns = t_end - t_start;
 
         if (workload == WORKLOAD_NOP) {
-            printf("{\"iter\":%d,\"mode\":\"%c\",\"workload\":\"nop\",\"total_ns\":%lu}\n",
-                   i, mode, (unsigned long)(t_end - t_start));
+            printf("{\"iter\":%d,\"mode\":\"%c\",\"workload\":\"nop\",\"batch\":%d,\"total_ns\":%lu}\n",
+                   i, mode, current_batch, (unsigned long)total_ns);
         } else {
-            printf("{\"iter\":%d,\"mode\":\"%c\",\"workload\":\"sram20\",\"submit_ns\":%lu,\"device_ns\":%lu,\"complete_ns\":%lu,\"total_ns\":%lu}\n",
-                   i, mode, (unsigned long)(t_after_submit - t_start), 
+            printf("{\"iter\":%d,\"mode\":\"%c\",\"workload\":\"sram20\",\"batch\":%d,\"submit_ns\":%lu,\"device_ns\":%lu,\"complete_ns\":%lu,\"total_ns\":%lu}\n",
+                   i, mode, current_batch,
+                   (unsigned long)(t_after_submit - t_start), 
                    (unsigned long)(t_after_device - t_after_submit),
                    (unsigned long)(t_end - t_after_device),
-                   (unsigned long)(t_end - t_start));
+                   (unsigned long)total_ns);
+        }
+        fflush(stdout);
+
+        if (adaptive) {
+            // Target total latency: ~22-25us
+            if (total_ns > 25000) {
+                if (current_batch > 1) current_batch--;
+            } else if (total_ns < 22000) {
+                if (current_batch < 32) current_batch++;
+            }
         }
     }
 
