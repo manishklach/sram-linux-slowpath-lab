@@ -138,6 +138,7 @@ static char *mode_to_str(int mode) {
 
 int main(int argc, char *argv[]) {
     int iterations = 1000;
+    int batch_size = 1;
     char mode = 'A';
     enum workload_type workload = WORKLOAD_NOP;
 
@@ -145,14 +146,16 @@ int main(int argc, char *argv[]) {
         {"mode", required_argument, 0, 'm'},
         {"iters", required_argument, 0, 'i'},
         {"workload", required_argument, 0, 'w'},
+        {"batch", required_argument, 0, 'b'},
         {0, 0, 0, 0}
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "m:i:w:", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "m:i:w:b:", long_options, NULL)) != -1) {
         switch (opt) {
             case 'm': mode = optarg[0]; break;
             case 'i': iterations = atoi(optarg); break;
+            case 'b': batch_size = atoi(optarg); break;
             case 'w':
                 if (strcmp(optarg, "nop") == 0) workload = WORKLOAD_NOP;
                 else if (strcmp(optarg, "sram20") == 0) workload = WORKLOAD_SRAM20;
@@ -199,39 +202,41 @@ int main(int argc, char *argv[]) {
             iterations, mode_to_str(mode), workload == WORKLOAD_NOP ? "nop" : "sram20");
 
     for (int i = 1; i <= iterations; i++) {
-        unsigned tail = *s.sq_ring.tail;
-        unsigned index = tail & *s.sq_ring.ring_mask;
-        struct io_uring_sqe *sqe = &s.sqes[index];
-
-        memset(sqe, 0, sizeof(*sqe));
-        sqe->opcode = IORING_OP_NOP;
-        sqe->user_data = i;
-
-        if (mode == 'C' || mode == 'E') {
-            sqe->addr = (uintptr_t)buf;
-            sqe->len = 4096;
-            sqe->buf_index = 0;
-        }
-        
-        if (mode == 'E') {
-            sqe->flags |= IOSQE_FIXED_FILE;
-            sqe->fd = 0;
-        } else {
-            sqe->fd = -1;
-        }
-
-        s.sq_ring.array[index] = index;
-        __atomic_store_n(s.sq_ring.tail, tail + 1, __ATOMIC_RELEASE);
-
         uint64_t t_start = now_ns();
         
+        for (int b = 0; b < batch_size; b++) {
+            unsigned tail = *s.sq_ring.tail;
+            unsigned index = tail & *s.sq_ring.ring_mask;
+            struct io_uring_sqe *sqe = &s.sqes[index];
+
+            memset(sqe, 0, sizeof(*sqe));
+            sqe->opcode = IORING_OP_NOP;
+            sqe->user_data = i * batch_size + b;
+
+            if (mode == 'C' || mode == 'E') {
+                sqe->addr = (uintptr_t)buf;
+                sqe->len = 4096;
+                sqe->buf_index = 0;
+            }
+            
+            if (mode == 'E') {
+                sqe->flags |= IOSQE_FIXED_FILE;
+                sqe->fd = 0;
+            } else {
+                sqe->fd = -1;
+            }
+
+            s.sq_ring.array[index] = index;
+            __atomic_store_n(s.sq_ring.tail, tail + 1, __ATOMIC_RELEASE);
+        }
+
         int enter_flags = IORING_ENTER_GETEVENTS;
         if (p.flags & IORING_SETUP_SQPOLL) {
             if (*s.sq_ring.flags & IORING_SQ_NEED_WAKEUP)
                 enter_flags |= IORING_ENTER_SQ_WAKEUP;
         }
 
-        int ret = io_uring_enter(s.ring_fd, 1, 1, enter_flags, NULL);
+        int ret = io_uring_enter(s.ring_fd, batch_size, batch_size, enter_flags, NULL);
         if (ret < 0 && errno != EBUSY) {
             perror("io_uring_enter");
             break;
@@ -245,19 +250,19 @@ int main(int argc, char *argv[]) {
         }
         uint64_t t_after_device = now_ns();
 
-        /* Consume completion */
-        unsigned head = *s.cq_ring.head;
-        unsigned tail_val;
-        while (head == (tail_val = __atomic_load_n(s.cq_ring.tail, __ATOMIC_ACQUIRE))) {
-            if (now_ns() - t_start > 1000000000ull) {
-                fprintf(stderr, "Timeout waiting for completion\n");
-                break;
+        /* Consume all completions in batch */
+        for (int b = 0; b < batch_size; b++) {
+            unsigned head = *s.cq_ring.head;
+            unsigned tail_val;
+            while (head == (tail_val = __atomic_load_n(s.cq_ring.tail, __ATOMIC_ACQUIRE))) {
+                if (now_ns() - t_start > 1000000000ull) {
+                    fprintf(stderr, "Timeout waiting for completion\n");
+                    break;
+                }
+                __builtin_ia32_pause();
             }
-            __builtin_ia32_pause();
+            __atomic_store_n(s.cq_ring.head, head + 1, __ATOMIC_RELEASE);
         }
-
-        struct io_uring_cqe *cqe = &s.cq_ring.cqes[head & *s.cq_ring.ring_mask];
-        __atomic_store_n(s.cq_ring.head, head + 1, __ATOMIC_RELEASE);
         
         uint64_t t_end = now_ns();
 
