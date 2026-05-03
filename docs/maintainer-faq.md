@@ -9,6 +9,9 @@ Registered buffers are essential for minimizing memory setup and page pinning ov
 ## Why not just use IOPOLL?
 IOPOLL is highly effective for supported polling-capable I/O paths (e.g., NVMe). This project first measures whether residual wakeup and scheduler latency remains for deterministic accelerator-style loops that may not fall under standard IOPOLL-compatible categories.
 
+## Why not stop at SQPOLL + registered buffers?
+Because even after applying these mechanisms, tail latency may remain due to completion delivery, wakeup, and scheduler behavior. Features like `SQPOLL` optimize the submission plane, but the completion plane—the path from a request being finished to the application becoming active—remains subject to standard kernel wakeup and scheduling logic. This project measures whether that residual gap is significant enough to warrant completion-side fast paths.
+
 ## Is this AI-specific?
 No. Kernel APIs should remain general-purpose. AI inference is used here as a motivating workload because its deterministic nature (via SRAM-style accelerators) makes host-side latency—which is often buried in "noise"—clearly visible and measurable.
 

@@ -40,4 +40,4 @@ Before proposing new kernel policies (such as bounded CQ polling or wakeup avoid
 - CQ consumed vs. Wakeup fallback
 
 ## Conclusion
-Existing `io_uring` fast paths are valuable and should be used first. This project focuses on the residual completion, wakeup, and scheduler latency that remains after those paths are applied, providing the data necessary to justify further kernel-level optimizations.
+Existing `io_uring` fast paths are valuable and should be used first. This project builds on `SQPOLL`, `IOPOLL`, and registered buffers—it does not replace them. It focuses on the residual completion, wakeup, and scheduler latency that remains after those mechanisms are applied, providing the empirical data necessary to justify further kernel-level optimizations.
